@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oficina - Painel</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card">
+        <div class="topbar">
+          <div>
+            <h1 style="margin: 0">Painel da Oficina</h1>
+            <p class="muted" id="welcome-line"></p>
+          </div>
+          <button id="logout-btn">Sair</button>
+        </div>
+
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="works">Obras</button>
+          <button class="tab-btn" data-tab="clients">Clientes</button>
+          <button class="tab-btn" data-tab="logs">Logs</button>
+          <button class="tab-btn" data-tab="add-work">Adicionar Obra</button>
+          <button class="tab-btn" data-tab="add-client">Adicionar Cliente</button>
+          <button class="tab-btn" data-tab="users">Utilizadores</button>
+        </div>
+
+        <section id="tab-works">
+          <h2>Obras</h2>
+          <div class="work-filters">
+            <div class="status-filter-group">
+              <button type="button" class="status-filter-btn active" data-status="">Todas</button>
+              <button type="button" class="status-filter-btn" data-status="pending">Pendentes</button>
+              <button type="button" class="status-filter-btn" data-status="in_progress">Em Progresso</button>
+              <button type="button" class="status-filter-btn" data-status="done">Concluidas</button>
+            </div>
+            <div class="client-filter-group">
+              <div class="search-input-row">
+                <input id="works-client-search" placeholder="Pesquisar obras por cliente..." />
+                <div id="works-client-search-menu" class="autocomplete-menu hidden"></div>
+              </div>
+              <div class="search-actions">
+                <button type="button" id="works-search-btn">Pesquisar</button>
+                <button type="button" id="works-clear-btn">Limpar</button>
+              </div>
+            </div>
+          </div>
+          <div id="works-list" class="grid"></div>
+        </section>
+
+        <section id="tab-clients" class="hidden">
+          <h2>Clientes</h2>
+          <div class="client-filter-group" style="margin-bottom: 12px;">
+            <div class="search-input-row">
+              <input id="clients-search" placeholder="Pesquisar cliente..." />
+              <div id="clients-search-menu" class="autocomplete-menu hidden"></div>
+            </div>
+            <div class="search-actions">
+              <button type="button" id="clients-search-btn">Pesquisar</button>
+              <button type="button" id="clients-clear-btn">Limpar</button>
+            </div>
+          </div>
+          <div id="clients-list" class="grid"></div>
+        </section>
+
+        <section id="tab-logs" class="hidden">
+          <h2>Logs</h2>
+          <div class="client-filter-group" style="margin-bottom: 12px;">
+            <div class="search-input-row">
+              <input id="logs-work-search" placeholder="Pesquisar logs por obra..." />
+            </div>
+            <div class="search-actions">
+              <button type="button" id="logs-search-btn">Pesquisar</button>
+              <button type="button" id="logs-clear-btn">Limpar</button>
+            </div>
+          </div>
+          <div id="logs-list" class="grid"></div>
+        </section>
+
+        <section id="tab-add-work" class="hidden">
+          <h2>Adicionar Obra</h2>
+          <form id="work-form">
+            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+              <div>
+                <label for="work-title">Nome da obra</label>
+                <input id="work-title" required />
+              </div>
+              <div>
+                <label for="work-status">Estado</label>
+                <select id="work-status">
+                  <option value="pending">Pendente</option>
+                  <option value="in_progress">Em progresso</option>
+                  <option value="done">Concluida</option>
+                  <option value="suspended">Suspensa</option>
+                </select>
+              </div>
+              <div>
+                <label for="work-client-input">Cliente</label>
+                <input id="work-client-input" placeholder="Escreve para filtrar clientes (opcional)" autocomplete="off" />
+                <div id="work-client-menu" class="autocomplete-menu hidden"></div>
+                <input id="work-client" type="hidden" />
+              </div>
+              <div>
+                <label for="work-due-date">Prazo</label>
+                <input id="work-due-date" type="date" />
+              </div>
+              <div>
+                <label for="work-priority">Prioridade</label>
+                <select id="work-priority">
+                  <option value="high">Alta</option>
+                  <option value="medium" selected>Media</option>
+                  <option value="low">Baixa</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-top: 10px">
+              <label for="work-description">Descricao</label>
+              <textarea id="work-description"></textarea>
+            </div>
+            <div style="margin-top: 10px">
+              <button type="submit" style="width: auto">Adicionar Obra</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="tab-add-client" class="hidden">
+          <h2>Adicionar Cliente</h2>
+          <form id="client-form">
+            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+              <div>
+                <label for="client-name">Nome</label>
+                <input id="client-name" required />
+              </div>
+              <div>
+                <label for="client-phone">Telefone</label>
+                <input id="client-phone" />
+              </div>
+              <div>
+                <label for="client-email">Email</label>
+                <input id="client-email" type="email" />
+              </div>
+              <div>
+                <label for="client-nif">NIF</label>
+                <input id="client-nif" inputmode="numeric" maxlength="9" />
+              </div>
+            </div>
+            <div style="margin-top: 10px">
+              <label for="client-notes">Notas</label>
+              <textarea id="client-notes"></textarea>
+            </div>
+            <div style="margin-top: 10px">
+              <button type="submit" style="width: auto">Adicionar Cliente</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="tab-users" class="hidden">
+          <h2>Utilizadores</h2>
+          <p class="muted">Apenas administradores podem gerir utilizadores.</p>
+          <form id="user-form">
+            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+              <div>
+                <label for="user-username">Username</label>
+                <input id="user-username" required />
+              </div>
+              <div>
+                <label for="user-password">Password</label>
+                <input id="user-password" type="password" minlength="6" required />
+              </div>
+              <div>
+                <label for="user-role">Role</label>
+                <select id="user-role">
+                  <option value="funcionario">Funcionario</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div style="margin-top: 10px">
+              <button type="submit" style="width: auto">Criar Utilizador</button>
+            </div>
+          </form>
+          <div id="users-list" class="grid" style="margin-top: 14px"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>

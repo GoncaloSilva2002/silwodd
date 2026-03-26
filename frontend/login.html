@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Oficina - Login</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <section class="card" style="max-width: 460px; margin: 60px auto">
+        <h1>Entrar</h1>
+        <p class="muted">Acede com username e password.</p>
+
+        <form id="login-form">
+          <div style="margin-bottom: 12px">
+            <label for="username">Username</label>
+            <input id="username" name="username" required />
+          </div>
+          <div style="margin-bottom: 12px">
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" required />
+          </div>
+          <button type="submit">Entrar</button>
+        </form>
+
+        <p id="login-error" class="error hidden"></p>
+        
+      </section>
+    </main>
+    <script src="/login.js"></script>
+  </body>
+</html>
