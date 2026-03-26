@@ -41,7 +41,7 @@ const statusFilterButtons = document.querySelectorAll(".status-filter-btn");
 const clientNameToId = new Map();
 let clientAutocompleteItems = [];
 let clientByNormalizedName = new Map();
-let worksFilterStatus = "";
+let worksFilterStatus = "in_progress";
 let worksFilterClient = "";
 let worksFilterClientId = "";
 let clientsFilterTerm = "";
@@ -955,7 +955,7 @@ if (worksSearchBtn) {
 
 if (worksClearBtn) {
   worksClearBtn.addEventListener("click", async () => {
-    worksFilterStatus = "";
+    worksFilterStatus = "in_progress";
     worksFilterClient = "";
     worksFilterClientId = "";
     worksClientSearchInput.value = "";

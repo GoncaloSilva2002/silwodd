@@ -523,6 +523,19 @@ body.role-funcionario .process-item h4 {
   gap: 10px;
 }
 
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.topbar-logo {
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  display: block;
+}
+
 .topbar button {
   width: auto;
 }
@@ -562,5 +575,14 @@ body.role-funcionario .process-item h4 {
   .topbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .topbar-brand {
+    width: 100%;
+  }
+
+  .topbar-logo {
+    width: 68px;
+    height: 68px;
   }
 }

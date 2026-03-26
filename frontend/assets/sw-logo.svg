@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">Logotipo SW</title>
+  <desc id="desc">Circulo preto com simbolo branco estilizado.</desc>
+  <circle cx="128" cy="128" r="128" fill="#000000" />
+  <path
+    fill="#ffffff"
+    d="M61 73c-5 9-8 19-8 30 0 17 8 31 20 40 8 7 18 10 28 13 9 3 18 6 24 12 4 4 6 9 6 15 0 9-4 18-11 26l-17-13c4-5 7-10 7-16 0-5-2-8-5-11-4-4-10-6-17-8-12-4-25-8-37-18-17-14-28-34-28-58 0-12 3-24 8-34zm5 100h25l17 31H42zm55-100h24l-20 33-18-33zm26 0h30l-37 83-16-31zm52 0h30l-51 111-15-31zm22 0h30l-62 135-15-30z"
+  />
+</svg>
