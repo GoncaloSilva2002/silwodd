@@ -1383,7 +1383,7 @@ function handleWorkToggle(event) {
   list.addEventListener("click", handleWorksInteraction);
   list.addEventListener("click", handleWorkToggle);
   list.addEventListener("change", handleWorkStatusChange);
-  list.addEventListener("change", handleMaterialCheckboxChange);
+  list.addEventListener("click", handleMaterialCheckboxChange);
   list.addEventListener("click", handleProcessCheckboxChange);
 });
 

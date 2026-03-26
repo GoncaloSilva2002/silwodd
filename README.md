@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # WebApp Oficina (Node.js)
 
 MVP com:
@@ -98,3 +99,6 @@ Esta versao ja inclui:
 
 - JWT expira em 8 horas.
 - Troca `JWT_SECRET` antes de usar em producao.
+=======
+# silwodd
+>>>>>>> 62ae8252f897df5fe80214bee12c4f01cd23fdb2
