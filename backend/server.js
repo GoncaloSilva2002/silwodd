@@ -62,12 +62,13 @@ const schemaInfo = {
 
 const statusCodeToCandidates = {
   pending: ["Pendente"],
-  in_progress: ["Em execucao", "Em execucao"],
-  done: ["Concluida", "Concluida"],
+  in_progress: ["Em Progresso", "Em execucao"],
+  done: ["Concluida"],
   suspended: ["Suspensa"]
 };
 const statusNameToCode = {
   pendente: "pending",
+  "em progresso": "in_progress",
   "em execucao": "in_progress",
   concluida: "done",
   suspensa: "suspended"
@@ -497,6 +498,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       item[`${key}_done`] = Number(Boolean(step?.concluida));
       item[`${key}_pdf_path`] = step?.pdf_path || null;
     }
+    item.kitchen_design_done = Number(Boolean(stepByName.get(processStepMap.kitchen_design)?.concluida));
     return item;
   });
 }

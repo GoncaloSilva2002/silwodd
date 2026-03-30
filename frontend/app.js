@@ -1256,6 +1256,7 @@ async function saveWorkStatus(workItem, triggerButton = null) {
       body: JSON.stringify({ status: statusSelect.value })
     });
     updateWorkCardFromWork(workItem, updatedWork);
+    await loadWorksTab();
     await loadLogs();
   } catch (error) {
     window.alert(error.message);
@@ -1324,6 +1325,7 @@ async function handleProcessCheckboxChange(event) {
     updateProcessItemFromWork(processItem, updatedWork);
     updateWorkCardFromWork(workItem, updatedWork);
     applyProcessSequenceUI(workItem);
+    await loadWorksTab();
     await loadLogs();
   } catch (error) {
     toggleButton.classList.toggle("done", previousValue);
