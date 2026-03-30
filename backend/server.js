@@ -261,10 +261,12 @@ async function ensureAuditLogsTable() {
 async function createAuditLog(req, actionType, entityType, entityId = null, workId = null, details = null) {
   try {
     await ensureAuditLogsTable();
+    const nextAuditLogId = await getNextTableId("audit_logs");
     await query(
-      `INSERT INTO audit_logs (user_id, username, user_role, action_type, entity_type, entity_id, work_id, details)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO audit_logs (id, user_id, username, user_role, action_type, entity_type, entity_id, work_id, details)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
+        nextAuditLogId,
         req.user?.id || null,
         req.user?.username || null,
         req.user?.role || null,
@@ -305,7 +307,7 @@ async function getAuditLogs(limit = 200, workSearch = "") {
      FROM audit_logs l
      LEFT JOIN obras o ON o.id = l.work_id
      ${whereClauses.length ? `WHERE ${whereClauses.join(" AND ")}` : ""}
-     ORDER BY created_at DESC, id DESC
+     ORDER BY l.created_at DESC, l.id DESC
      LIMIT ${safeLimit}`,
     params
   );
@@ -610,8 +612,9 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "Estado nao encontrado na tabela estados." });
     }
 
-    const baseColumns = ["nome_obra", "descricao", "id_cliente", "id_estado"];
-    const baseValues = [String(title).trim(), description ? String(description).trim() : null, parsedClientId, estadoId];
+    const nextWorkId = await getNextTableId("obras");
+    const baseColumns = ["id", "nome_obra", "descricao", "id_cliente", "id_estado"];
+    const baseValues = [nextWorkId, String(title).trim(), description ? String(description).trim() : null, parsedClientId, estadoId];
     if (schemaInfo.obrasPriorityColumn) {
       baseColumns.push(schemaInfo.obrasPriorityColumn);
       baseValues.push(priorityValue);
@@ -627,8 +630,8 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     );
 
     const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === result.insertId);
-    await createAuditLog(req, "create_work", "work", result.insertId, result.insertId, {
+    const work = rows.find((item) => item.id === nextWorkId);
+    await createAuditLog(req, "create_work", "work", nextWorkId, nextWorkId, {
       title: String(title).trim(),
       status: status || "pending",
       priority: priorityValue,
