@@ -9,7 +9,7 @@ document.body.classList.add(`role-${String(user.role || "user").toLowerCase()}`)
 
 const welcomeLine = document.getElementById("welcome-line");
 const logoutBtn = document.getElementById("logout-btn");
-const tabButtons = document.queryorAll(".tab-btn");
+const tabButtons = document.querySelectorAll(".tab-btn");
 const tabWorks = document.getElementById("tab-works");
 const tabClients = document.getElementById("tab-clients");
 const tabLogs = document.getElementById("tab-logs");
