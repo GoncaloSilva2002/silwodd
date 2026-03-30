@@ -213,6 +213,11 @@ async function ensureClientsNifColumn() {
   }
 }
 
+async function getNextTableId(tableName) {
+  const rows = await query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${tableName}`);
+  return Number(rows[0]?.nextId || 1);
+}
+
 async function ensureProcessStepsTable() {
   await query(`
     CREATE TABLE IF NOT EXISTS obra_etapas (
@@ -905,8 +910,9 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
     if (nifValue && !/^\d{9}$/.test(nifValue)) {
       return res.status(400).json({ error: "NIF deve ter 9 digitos." });
     }
-    const insertColumns = ["nome", "telefone", "email"];
-    const insertValues = [String(name).trim(), phone || null, email || null];
+    const nextClientId = await getNextTableId("clientes");
+    const insertColumns = ["id", "nome", "telefone", "email"];
+    const insertValues = [nextClientId, String(name).trim(), phone || null, email || null];
     if (schemaInfo.clientesNifColumn) {
       insertColumns.push(schemaInfo.clientesNifColumn);
       insertValues.push(nifValue || null);
@@ -920,15 +926,15 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
       `SELECT id, nome AS name, telefone AS phone, email, ${schemaInfo.clientesNifColumn ? `${schemaInfo.clientesNifColumn} AS nif,` : "NULL AS nif,"} NULL AS notes, created_at
        FROM clientes
        WHERE id = ?`,
-      [result.insertId]
+      [nextClientId]
     );
-    await createAuditLog(req, "create_client", "client", result.insertId, null, {
+    await createAuditLog(req, "create_client", "client", nextClientId, null, {
       name: String(name).trim(),
       nif: nifValue || null
     });
     return res.status(201).json(rows[0]);
-  } catch (_error) {
-    return res.status(500).json({ error: "Erro ao criar cliente." });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao criar cliente." });
   }
 });
 
@@ -946,22 +952,23 @@ app.post("/api/users", requireAuth, requireAdmin, async (req, res) => {
     const existing = await query("SELECT id FROM funcionarios WHERE username = ? LIMIT 1", [usernameValue]);
     if (existing[0]) return res.status(409).json({ error: "Username ja existe." });
 
+    const nextUserId = await getNextTableId("funcionarios");
     const passwordHash = bcrypt.hashSync(String(password), 12);
     const result = await query(
-      "INSERT INTO funcionarios (nome, username, password, role) VALUES (?, ?, ?, ?)",
-      [usernameValue, usernameValue, passwordHash, roleValue]
+      "INSERT INTO funcionarios (id, nome, username, password, role) VALUES (?, ?, ?, ?, ?)",
+      [nextUserId, usernameValue, usernameValue, passwordHash, roleValue]
     );
     const rows = await query(
       "SELECT id, username, role, created_at FROM funcionarios WHERE id = ? LIMIT 1",
-      [result.insertId]
+      [nextUserId]
     );
-    await createAuditLog(req, "create_user", "user", result.insertId, null, {
+    await createAuditLog(req, "create_user", "user", nextUserId, null, {
       username: usernameValue,
       role: roleValue
     });
     return res.status(201).json(rows[0]);
-  } catch (_error) {
-    return res.status(500).json({ error: "Erro ao criar utilizador." });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao criar utilizador." });
   }
 });
 
