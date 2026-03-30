@@ -699,11 +699,13 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
         [ordered, arrived, ordered, arrived, existing[0].id]
       );
     } else {
+      const nextMaterialId = await getNextTableId("materiais");
       await query(
-        `INSERT INTO materiais (id_obra, nome_material, encomendado, chegou, data_encomenda, data_chegada)
-         VALUES (?, ?, ?, ?, IF(? = 1, CURDATE(), NULL), IF(? = 1, CURDATE(), NULL))`,
-        [id, materialName, ordered, arrived, ordered, arrived]
+        `INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou, data_encomenda, data_chegada)
+         VALUES (?, ?, ?, ?, ?, IF(? = 1, CURDATE(), NULL), IF(? = 1, CURDATE(), NULL))`,
+        [nextMaterialId, id, materialName, ordered, arrived, ordered, arrived]
       );
+      existing[0] = { id: nextMaterialId };
     }
 
     const rows = await getWorks(null);
@@ -770,10 +772,12 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
     if (existing[0]) {
       await query("UPDATE obra_etapas SET concluida = ? WHERE id = ?", [done, existing[0].id]);
     } else {
+      const nextProcessStepId = await getNextTableId("obra_etapas");
       await query(
-        "INSERT INTO obra_etapas (id_obra, nome_etapa, concluida) VALUES (?, ?, ?)",
-        [id, stepName, done]
+        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida) VALUES (?, ?, ?, ?)",
+        [nextProcessStepId, id, stepName, done]
       );
+      existing[0] = { id: nextProcessStepId };
     }
 
     doneByName.set(stepName, done);
@@ -834,10 +838,12 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
       if (existing[0]) {
         await query("UPDATE obra_etapas SET pdf_path = ? WHERE id = ?", [publicPath, existing[0].id]);
       } else {
+        const nextProcessStepId = await getNextTableId("obra_etapas");
         await query(
-          "INSERT INTO obra_etapas (id_obra, nome_etapa, concluida, pdf_path) VALUES (?, ?, 0, ?)",
-          [id, stepName, publicPath]
+          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path) VALUES (?, ?, ?, 0, ?)",
+          [nextProcessStepId, id, stepName, publicPath]
         );
+        existing[0] = { id: nextProcessStepId };
       }
 
       const rows = await getWorks(null);
@@ -874,7 +880,12 @@ app.post("/api/works/:id/materials/:materialKey/upload", requireAuth, async (req
       if (existing[0]) {
         await query("UPDATE materiais SET pdf_path = ? WHERE id = ?", [publicPath, existing[0].id]);
       } else {
-        await query("INSERT INTO materiais (id_obra, nome_material, pdf_path) VALUES (?, ?, ?)", [id, materialName, publicPath]);
+        const nextMaterialId = await getNextTableId("materiais");
+        await query(
+          "INSERT INTO materiais (id, id_obra, nome_material, pdf_path) VALUES (?, ?, ?, ?)",
+          [nextMaterialId, id, materialName, publicPath]
+        );
+        existing[0] = { id: nextMaterialId };
       }
 
       const rows = await getWorks(null);
