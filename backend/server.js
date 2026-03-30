@@ -12,7 +12,7 @@ const { query, initDb } = require("./db");
 const { requireAuth } = require("./middleware/auth");
 
 const app = express();
-const port = Number(process.env.PORT || 3000);
+const port = process.env.PORT || 3000;
 const jwtSecret = process.env.JWT_SECRET || "";
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
 const nodeEnv = process.env.NODE_ENV || "development";
@@ -1074,7 +1074,7 @@ async function start() {
     await loadSchemaInfo();
     app.listen(port, () => {
       // eslint-disable-next-line no-console
-      console.log(`Servidor online em http://localhost:${port}`);
+      console.log("Server running on port " + port);
     });
   } catch (error) {
     // eslint-disable-next-line no-console

@@ -4,7 +4,7 @@
   "description": "Web application de oficina com login, obras e clientes.",
   "main": "backend/server.js",
   "scripts": {
-    "start": "node backend/server.js",
+    "start": "node server.js",
     "dev": "nodemon backend/server.js"
   },
   "dependencies": {
