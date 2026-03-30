@@ -2,7 +2,6 @@ require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
 const express = require("express");
-const { createClient } = require('@supabase/supabase-js');
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -13,10 +12,6 @@ const { query, initDb } = require("./db");
 const { requireAuth } = require("./middleware/auth");
 
 const app = express();
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
 const port = process.env.PORT || 3000;
 const jwtSecret = process.env.JWT_SECRET || "";
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
