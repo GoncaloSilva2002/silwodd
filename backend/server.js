@@ -30,7 +30,9 @@ const materialMap = {
   hardware: "Ferragens",
   paint: "Tinta"
 };
+const defaultMaterials = Object.entries(materialMap).map(([key, label]) => ({ key, label }));
 const materialKeys = new Set(Object.keys(materialMap));
+const materialNameToKey = new Map(defaultMaterials.map((material) => [material.label, material.key]));
 const defaultProcessSteps = [
   { key: "kitchen_design", label: "Desenho da cozinha" },
   { key: "cutting", label: "Corte" },
@@ -51,6 +53,7 @@ const schemaInfo = {
   obrasPriorityColumn: null,
   obrasObservationsColumn: null,
   clientesNifColumn: null,
+  clientesAddressColumn: null,
   obrasProcessConfiguredColumn: null
 };
 
@@ -145,6 +148,14 @@ function normalizeText(value) {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function normalizeMaterialLabel(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function getMaterialKeyByName(materialName) {
+  return materialNameToKey.get(materialName) || null;
+}
+
 function mapStatusNameToCode(name) {
   if (!name) return "pending";
   return statusNameToCode[normalizeText(name)] || "pending";
@@ -181,6 +192,8 @@ async function loadSchemaInfo() {
   const clientNames = new Set(clientColumns.map((column) => String(column.Field)));
   const nifCandidates = ["nif", "numero_contribuinte"];
   schemaInfo.clientesNifColumn = nifCandidates.find((name) => clientNames.has(name)) || null;
+  const addressCandidates = ["morada", "endereco", "address"];
+  schemaInfo.clientesAddressColumn = addressCandidates.find((name) => clientNames.has(name)) || null;
 }
 
 async function ensureWorksPriorityColumn() {
@@ -207,6 +220,14 @@ async function ensureClientsNifColumn() {
   }
 }
 
+async function ensureClientsAddressColumn() {
+  const columns = await query("SHOW COLUMNS FROM clientes");
+  const hasAddress = columns.some((column) => String(column.Field) === "morada");
+  if (!hasAddress) {
+    await query("ALTER TABLE clientes ADD COLUMN morada VARCHAR(255) NULL");
+  }
+}
+
 async function ensureWorksProcessConfiguredColumn() {
   const columns = await query("SHOW COLUMNS FROM obras");
   const hasColumn = columns.some((column) => String(column.Field) === "process_steps_configured");
@@ -218,6 +239,42 @@ async function ensureWorksProcessConfiguredColumn() {
 async function getNextTableId(tableName) {
   const rows = await query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${tableName}`);
   return Number(rows[0]?.nextId || 1);
+}
+
+async function getOrderedMaterials(workId) {
+  return query(
+    `
+      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou
+      FROM materiais
+      WHERE id_obra = ?
+      ORDER BY id ASC
+    `,
+    [workId]
+  );
+}
+
+async function ensureDefaultMaterialsForWork(workId) {
+  const existing = await query(
+    "SELECT nome_material FROM materiais WHERE id_obra = ?",
+    [workId]
+  );
+  const existingNames = new Set(existing.map((row) => String(row.nome_material)));
+
+  for (const material of defaultMaterials) {
+    if (existingNames.has(material.label)) continue;
+    const nextId = await getNextTableId("materiais");
+    await query(
+      "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, 0, 0)",
+      [nextId, workId, material.label]
+    );
+  }
+}
+
+async function initializeMaterialsForExistingWorks() {
+  const works = await query("SELECT id FROM obras");
+  for (const work of works) {
+    await ensureDefaultMaterialsForWork(work.id);
+  }
 }
 
 async function ensureProcessStepsTable() {
@@ -243,6 +300,18 @@ async function ensureProcessStepsTable() {
   if (!hasOrderIndex) {
     await query("ALTER TABLE obra_etapas ADD COLUMN order_index INT NOT NULL DEFAULT 0");
   }
+  const hasCheckedByUserId = columns.some((column) => String(column.Field) === "checked_by_user_id");
+  if (!hasCheckedByUserId) {
+    await query("ALTER TABLE obra_etapas ADD COLUMN checked_by_user_id INT NULL");
+  }
+  const hasCheckedByUsername = columns.some((column) => String(column.Field) === "checked_by_username");
+  if (!hasCheckedByUsername) {
+    await query("ALTER TABLE obra_etapas ADD COLUMN checked_by_username VARCHAR(120) NULL");
+  }
+  const hasCheckedAt = columns.some((column) => String(column.Field) === "checked_at");
+  if (!hasCheckedAt) {
+    await query("ALTER TABLE obra_etapas ADD COLUMN checked_at DATETIME NULL");
+  }
 }
 
 function normalizeProcessStepLabel(value) {
@@ -256,7 +325,7 @@ function getProcessStepKeyByName(stepName) {
 async function getOrderedProcessSteps(workId) {
   return query(
     `
-      SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index
+      SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index, checked_by_user_id, checked_by_username, checked_at
       FROM obra_etapas
       WHERE id_obra = ?
       ORDER BY order_index ASC, id ASC
@@ -521,21 +590,19 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   if (!obras.length) return [];
 
   const obraIds = obras.map((obra) => obra.id);
-  const materialNames = Object.values(materialMap);
   const placeholdersObras = obraIds.map(() => "?").join(", ");
-  const placeholdersMaterials = materialNames.map(() => "?").join(", ");
   let materials = [];
   let processSteps = [];
   try {
     materials = await query(
       `
         SELECT id_obra, nome_material, pdf_path, encomendado, chegou
+             , id
         FROM materiais
         WHERE id_obra IN (${placeholdersObras})
-          AND nome_material IN (${placeholdersMaterials})
-        ORDER BY id DESC
+        ORDER BY id_obra ASC, id ASC
       `,
-      [...obraIds, ...materialNames]
+      [...obraIds]
     );
   } catch (error) {
     // Keep works visible even if materiais table/columns are inconsistent.
@@ -546,6 +613,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     processSteps = await query(
       `
         SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index
+             , checked_by_user_id, checked_by_username, checked_at
         FROM obra_etapas
         WHERE id_obra IN (${placeholdersObras})
         ORDER BY id_obra ASC, order_index ASC, id ASC
@@ -559,11 +627,8 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
 
   const grouped = new Map();
   for (const material of materials) {
-    if (!grouped.has(material.id_obra)) grouped.set(material.id_obra, new Map());
-    const byName = grouped.get(material.id_obra);
-    if (!byName.has(material.nome_material)) {
-      byName.set(material.nome_material, material);
-    }
+    if (!grouped.has(material.id_obra)) grouped.set(material.id_obra, []);
+    grouped.get(material.id_obra).push(material);
   }
   const stepsGrouped = new Map();
   for (const step of processSteps) {
@@ -583,13 +648,25 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       client_id: obra.client_id,
       client_name: obra.client_name
     };
-    const byName = grouped.get(obra.id) || new Map();
+    const workMaterials = grouped.get(obra.id) || [];
+    const byName = new Map();
+    for (const material of workMaterials) {
+      byName.set(material.nome_material, material);
+    }
     for (const [key, materialName] of Object.entries(materialMap)) {
       const material = byName.get(materialName);
       item[`${key}_pdf_path`] = material?.pdf_path || null;
       item[`${key}_ordered`] = Number(Boolean(material?.encomendado));
       item[`${key}_arrived`] = Number(Boolean(material?.chegou));
     }
+    item.materials = workMaterials.map((material) => ({
+      id: material.id,
+      key: getMaterialKeyByName(material.nome_material),
+      label: material.nome_material,
+      pdf_path: material.pdf_path || null,
+      ordered: Number(Boolean(material.encomendado)),
+      arrived: Number(Boolean(material.chegou))
+    }));
     const workSteps = stepsGrouped.get(obra.id) || [];
     const stepByName = new Map(workSteps.map((step) => [step.nome_etapa, step]));
     for (const [key, stepName] of Object.entries(processStepMap)) {
@@ -607,7 +684,10 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
         done: Number(Boolean(step.concluida)),
         pdf_path: step.pdf_path || null,
         order_index: Number(step.order_index) || 0,
-        can_upload_pdf: key === "kitchen_design"
+        can_upload_pdf: key === "kitchen_design",
+        checked_by_user_id: step.checked_by_user_id || null,
+        checked_by_username: step.checked_by_username || null,
+        checked_at: step.checked_at || null
       };
     });
     return item;
@@ -750,6 +830,7 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
         [nextStepId, nextWorkId, step.label, index]
       );
     }
+    await ensureDefaultMaterialsForWork(nextWorkId);
 
     const rows = await getWorks(null);
     const work = rows.find((item) => item.id === nextWorkId);
@@ -843,7 +924,98 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
   }
 });
 
-async function updateProcessStepDone(workId, stepId, done) {
+app.post("/api/works/:id/materials", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const label = normalizeMaterialLabel(req.body?.label);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!label) return res.status(400).json({ error: "O nome do material e obrigatorio." });
+    if (label.length > 120) return res.status(400).json({ error: "O nome do material e demasiado longo." });
+
+    const existing = await query(
+      "SELECT id FROM materiais WHERE id_obra = ? AND LOWER(nome_material) = LOWER(?) ORDER BY id DESC LIMIT 1",
+      [id, label]
+    );
+    if (existing[0]) {
+      return res.status(409).json({ error: "Ja existe um material com esse nome nesta obra." });
+    }
+
+    const nextMaterialId = await getNextTableId("materiais");
+    await query(
+      "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, 0, 0)",
+      [nextMaterialId, id, label]
+    );
+
+    const rows = await getWorks(null);
+    const work = rows.find((item) => item.id === id);
+    await createAuditLog(req, "create_material", "material", nextMaterialId, id, { label });
+    return res.status(201).json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao criar material." });
+  }
+});
+
+app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const materialId = Number(req.params.materialId);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+
+    const ordered = req.body?.ordered === true || req.body?.ordered === "true" ? 1 : 0;
+    const arrived = req.body?.arrived === true || req.body?.arrived === "true" ? 1 : 0;
+    const existing = await query(
+      "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+      [materialId, id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+
+    await query(
+      `UPDATE materiais
+       SET encomendado = ?, chegou = ?,
+           data_encomenda = IF(? = 1 AND data_encomenda IS NULL, CURDATE(), data_encomenda),
+           data_chegada = IF(? = 1 AND data_chegada IS NULL, CURDATE(), data_chegada)
+       WHERE id = ? AND id_obra = ?`,
+      [ordered, arrived, ordered, arrived, materialId, id]
+    );
+
+    const rows = await getWorks(null);
+    const work = rows.find((item) => item.id === id);
+    await createAuditLog(req, "update_material", "material", materialId, id, {
+      label: existing[0].nome_material,
+      ordered,
+      arrived
+    });
+    return res.json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar material." });
+  }
+});
+
+app.delete("/api/works/:id/materials/item/:materialId", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const materialId = Number(req.params.materialId);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+
+    const existing = await query(
+      "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+      [materialId, id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+
+    await query("DELETE FROM materiais WHERE id = ? AND id_obra = ?", [materialId, id]);
+    const rows = await getWorks(null);
+    const work = rows.find((item) => item.id === id);
+    await createAuditLog(req, "delete_material", "material", materialId, id, { label: existing[0].nome_material });
+    return res.json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar material." });
+  }
+});
+
+async function updateProcessStepDone(req, workId, stepId, done) {
   const steps = await normalizeProcessStepOrder(workId);
   const stepIndex = steps.findIndex((step) => Number(step.id) === Number(stepId));
   if (stepIndex < 0) {
@@ -865,7 +1037,17 @@ async function updateProcessStepDone(workId, stepId, done) {
     }
   }
 
-  await query("UPDATE obra_etapas SET concluida = ? WHERE id = ? AND id_obra = ?", [done, stepId, workId]);
+  if (done === 1) {
+    await query(
+      "UPDATE obra_etapas SET concluida = ?, checked_by_user_id = ?, checked_by_username = ?, checked_at = NOW() WHERE id = ? AND id_obra = ?",
+      [done, req.user?.id || null, req.user?.username || null, stepId, workId]
+    );
+  } else {
+    await query(
+      "UPDATE obra_etapas SET concluida = ?, checked_by_user_id = NULL, checked_by_username = NULL, checked_at = NULL WHERE id = ? AND id_obra = ?",
+      [done, stepId, workId]
+    );
+  }
   await recalculateWorkStatusFromProcessSteps(workId);
 }
 
@@ -975,7 +1157,7 @@ app.patch("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) =
     );
     if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
 
-    await updateProcessStepDone(id, stepId, done);
+    await updateProcessStepDone(req, id, stepId, done);
     const works = await getWorks(null);
     const work = works.find((item) => item.id === id);
     await createAuditLog(req, "update_process_step", "process_step", stepId, id, {
@@ -1008,7 +1190,7 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
     if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
 
     const done = req.body?.done === true || req.body?.done === "true" ? 1 : 0;
-    await updateProcessStepDone(id, existing[0].id, done);
+    await updateProcessStepDone(req, id, existing[0].id, done);
     const works = await getWorks(null);
     const work = works.find((item) => item.id === id);
     await createAuditLog(req, "update_process_step", "process_step", existing[0].id, id, { step_key: stepKey, done });
@@ -1109,10 +1291,46 @@ app.post("/api/works/:id/materials/:materialKey/upload", requireAuth, async (req
   });
 });
 
+app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const materialId = Number(req.params.materialId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+
+  upload.single("pdf")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do PDF." });
+    if (!req.file) return res.status(400).json({ error: "Selecione um ficheiro PDF." });
+
+    try {
+      const existing = await query(
+        "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+        [materialId, id]
+      );
+      if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+
+      const publicPath = `/uploads/${req.file.filename}`;
+      await query("UPDATE materiais SET pdf_path = ? WHERE id = ? AND id_obra = ?", [publicPath, materialId, id]);
+
+      const rows = await getWorks(null);
+      const work = rows.find((item) => item.id === id);
+      await createAuditLog(req, "upload_material_pdf", "material", materialId, id, {
+        label: existing[0].nome_material,
+        pdf_path: publicPath
+      });
+      return res.json(work || null);
+    } catch (_err) {
+      return res.status(500).json({ error: "Erro ao guardar PDF." });
+    }
+  });
+});
+
 app.get("/api/clients", requireAuth, async (_req, res) => {
   try {
     const rows = await query(
-      `SELECT id, nome AS name, telefone AS phone, email, ${schemaInfo.clientesNifColumn ? `${schemaInfo.clientesNifColumn} AS nif,` : "NULL AS nif,"} NULL AS notes, created_at
+      `SELECT id, nome AS name, telefone AS phone, email,
+              ${schemaInfo.clientesNifColumn ? `${schemaInfo.clientesNifColumn} AS nif,` : "NULL AS nif,"}
+              ${schemaInfo.clientesAddressColumn ? `${schemaInfo.clientesAddressColumn} AS address,` : "NULL AS address,"}
+              NULL AS notes, created_at
        FROM clientes
        ORDER BY id DESC`
     );
@@ -1124,11 +1342,12 @@ app.get("/api/clients", requireAuth, async (_req, res) => {
 
 app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { name, phone, email, nif } = req.body || {};
+    const { name, phone, email, nif, address } = req.body || {};
     if (!name || !String(name).trim()) {
       return res.status(400).json({ error: "O nome do cliente e obrigatorio." });
     }
     const nifValue = String(nif || "").trim();
+    const addressValue = String(address || "").trim();
     if (nifValue && !/^\d{9}$/.test(nifValue)) {
       return res.status(400).json({ error: "NIF deve ter 9 digitos." });
     }
@@ -1138,6 +1357,10 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
     if (schemaInfo.clientesNifColumn) {
       insertColumns.push(schemaInfo.clientesNifColumn);
       insertValues.push(nifValue || null);
+    }
+    if (schemaInfo.clientesAddressColumn) {
+      insertColumns.push(schemaInfo.clientesAddressColumn);
+      insertValues.push(addressValue || null);
     }
     const placeholders = insertColumns.map(() => "?").join(", ");
     const result = await query(
@@ -1314,7 +1537,9 @@ async function start() {
     await ensureWorksPriorityColumn();
     await ensureWorksObservationsColumn();
     await ensureClientsNifColumn();
+    await ensureClientsAddressColumn();
     await ensureWorksProcessConfiguredColumn();
+    await initializeMaterialsForExistingWorks();
     await initializeProcessStepsForExistingWorks();
     await loadSchemaInfo();
     const server = app.listen(normalizedPort, () => {

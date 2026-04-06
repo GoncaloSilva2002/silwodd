@@ -285,6 +285,17 @@ button:hover {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.material-editor-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.material-input {
+  flex: 1 1 240px;
+}
+
 .process-grid {
   margin-top: 12px;
   display: grid;
@@ -366,6 +377,11 @@ button:hover {
 
 .process-grid.is-saving-order {
   opacity: 0.75;
+}
+
+.process-check-meta {
+  margin: 0;
+  font-size: 12px;
 }
 
 .process-toggle-btn {
@@ -496,6 +512,21 @@ body.role-funcionario .process-item h4 {
 .material-head h4 {
   margin: 0;
   font-size: 15px;
+}
+
+.material-item-tools {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.material-delete-btn {
+  width: auto;
+  min-width: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+  background: #fff4ef;
+  color: #8a2f12;
+  border-color: #e7b8a8;
 }
 
 .material-toggle-row {

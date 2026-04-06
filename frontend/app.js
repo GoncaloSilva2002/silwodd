@@ -52,7 +52,7 @@ let usersCache = [];
 let logsCache = [];
 let draggedProcessStepId = null;
 
-const materialTypes = [
+const defaultMaterialTypes = [
   { key: "stone", label: "Pedra" },
   { key: "wood_panels", label: "Placas de madeira" },
   { key: "hardware", label: "Ferragens" },
@@ -117,10 +117,9 @@ const processStepIcons = {
   `
 };
 const statusOptions = [
-  { value: "pending", label: "Pendente" },
-  { value: "in_progress", label: "Em progresso" },
-  { value: "done", label: "Concluida" },
-  { value: "suspended", label: "Suspensa" }
+  { value: "pending", label: "Pendente/Encomenda" },
+  { value: "in_progress", label: "Produçao" },
+  { value: "done", label: "Finazalizada" }
 ];
 const priorityOptions = [
   { value: "high", label: "Alta" },
@@ -219,13 +218,35 @@ async function api(path, options = {}) {
   return data;
 }
 
+function getWorkMaterials(work) {
+  if (Array.isArray(work?.materials) && work.materials.length) {
+    return work.materials.map((material) => ({
+      id: material.id,
+      key: material.key || null,
+      label: material.label,
+      pdf_path: material.pdf_path || null,
+      ordered: Boolean(material.ordered),
+      arrived: Boolean(material.arrived)
+    }));
+  }
+
+  return defaultMaterialTypes.map((material) => ({
+    id: null,
+    key: material.key,
+    label: material.label,
+    pdf_path: work?.[`${material.key}_pdf_path`] || null,
+    ordered: Boolean(work?.[`${material.key}_ordered`]),
+    arrived: Boolean(work?.[`${material.key}_arrived`])
+  }));
+}
+
 function materialHtml(work, material) {
-  const pdfPath = work[`${material.key}_pdf_path`];
-  const ordered = Boolean(work[`${material.key}_ordered`]);
-  const arrived = Boolean(work[`${material.key}_arrived`]);
+  const pdfPath = material.pdf_path || null;
+  const ordered = Boolean(material.ordered);
+  const arrived = Boolean(material.arrived);
 
   return `
-    <div class="material-item" data-work-id="${work.id}" data-material-key="${material.key}">
+    <div class="material-item" data-work-id="${work.id}" data-material-id="${material.id || ""}" data-material-key="${material.key || ""}">
       <div class="material-head">
         <h4>${material.label}</h4>
         ${
@@ -238,6 +259,9 @@ function materialHtml(work, material) {
             `
             : `<span class="muted">Sem PDF</span>`
         }
+      </div>
+      <div class="material-item-tools">
+        <button type="button" class="material-delete-btn" aria-label="Eliminar material">Eliminar</button>
       </div>
       <div class="material-toggle-row">
         <span>Encomendado</span>
@@ -272,12 +296,17 @@ function renderMaterialLinks(pdfPath) {
 
 function updateMaterialItemFromWork(materialItem, work) {
   if (!materialItem || !work) return;
+  const materialId = Number(materialItem.dataset.materialId);
   const materialKey = materialItem.dataset.materialKey;
-  if (!materialKey) return;
+  const material = getWorkMaterials(work).find((item) => {
+    if (materialId) return Number(item.id) === materialId;
+    return item.key && item.key === materialKey;
+  });
+  if (!material) return;
 
-  const ordered = Boolean(work[`${materialKey}_ordered`]);
-  const arrived = Boolean(work[`${materialKey}_arrived`]);
-  const pdfPath = work[`${materialKey}_pdf_path`] || null;
+  const ordered = Boolean(material.ordered);
+  const arrived = Boolean(material.arrived);
+  const pdfPath = material.pdf_path || null;
 
   const orderedInput = materialItem.querySelector(".material-ordered");
   const arrivedInput = materialItem.querySelector(".material-arrived");
@@ -305,7 +334,9 @@ function getWorkProcessSteps(work) {
       done: Boolean(step.done),
       pdf_path: step.pdf_path || null,
       can_upload_pdf: Boolean(step.can_upload_pdf),
-      order_index: Number(step.order_index ?? index)
+      order_index: Number(step.order_index ?? index),
+      checked_by_username: step.checked_by_username || null,
+      checked_at: step.checked_at || null
     }));
   }
 
@@ -316,8 +347,16 @@ function getWorkProcessSteps(work) {
     done: Boolean(work?.[`${step.key}_done`]),
     pdf_path: work?.[`${step.key}_pdf_path`] || null,
     can_upload_pdf: step.key === "kitchen_design",
-    order_index: index
+    order_index: index,
+    checked_by_username: null,
+    checked_at: null
   }));
+}
+
+function formatProcessCheckMeta(step) {
+  if (!step?.done || !step?.checked_by_username) return "";
+  const when = step.checked_at ? formatLogDate(step.checked_at) : "";
+  return when ? `Marcado por ${step.checked_by_username} em ${when}` : `Marcado por ${step.checked_by_username}`;
 }
 
 function processStepHtml(work, step, stepIndex, totalSteps) {
@@ -328,6 +367,7 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
   const pdfPath = step.pdf_path || null;
   const blockedByOrder = !previousDone && !done;
   const canUploadPdf = Boolean(step.can_upload_pdf);
+  const checkMeta = formatProcessCheckMeta(step);
   const pdfHtml = canUploadPdf
     ? `
       <div class="process-pdf-links">
@@ -353,6 +393,7 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
       <button type="button" class="process-toggle-btn ${done ? "done" : ""}" ${blockedByOrder ? "disabled" : ""} aria-label="${done ? "Etapa feita" : "Marcar etapa como feita"}">
         <span class="process-toggle-square" aria-hidden="true"></span>
       </button>
+      ${checkMeta ? `<p class="muted process-check-meta">${escapeHtml(checkMeta)}</p>` : ""}
       <p class="muted process-order-hint ${blockedByOrder ? "" : "hidden"}">Conclui a etapa anterior primeiro.</p>
       ${pdfHtml}
     </div>
@@ -485,6 +526,7 @@ function renderWorks(items, target) {
   target.innerHTML = items
     .map(
       (w) => {
+        const materials = getWorkMaterials(w);
         const processSteps = getWorkProcessSteps(w);
         return `
       <article class="work-item" data-work-id="${w.id}">
@@ -521,8 +563,12 @@ function renderWorks(items, target) {
             <button type="button" class="detail-tab-btn" data-detail-tab="observations">Observacoes</button>
           </div>
           <div class="detail-panel detail-panel-materials">
+            <div class="material-editor-bar">
+              <input class="material-input" placeholder="Novo material..." />
+              <button type="button" class="add-material-btn">Adicionar material</button>
+            </div>
             <div class="materials-grid">
-              ${materialTypes.map((material) => materialHtml(w, material)).join("")}
+              ${materials.map((material) => materialHtml(w, material)).join("")}
             </div>
           </div>
           <div class="detail-panel detail-panel-process hidden">
@@ -560,6 +606,7 @@ function renderClients(items) {
       <article class="client-item">
         <h3>${escapeHtml(c.name)}</h3>
         <p><strong>NIF:</strong> ${escapeHtml(c.nif || "-")}</p>
+        <p><strong>Morada:</strong> ${escapeHtml(c.address || "-")}</p>
         <p><strong>Telefone:</strong> ${escapeHtml(c.phone || "-")}</p>
         <p><strong>Email:</strong> ${escapeHtml(c.email || "-")}</p>
         <p class="muted">${escapeHtml(c.notes || "")}</p>
@@ -913,6 +960,7 @@ clientForm.addEventListener("submit", async (event) => {
     name: document.getElementById("client-name").value.trim(),
     phone: document.getElementById("client-phone").value.trim(),
     email: document.getElementById("client-email").value.trim(),
+    address: document.getElementById("client-address").value.trim(),
     nif: document.getElementById("client-nif").value.trim(),
     notes: document.getElementById("client-notes").value.trim()
   };
@@ -1179,6 +1227,35 @@ async function handleWorksInteraction(event) {
   if (!button) return;
 
   const workItem = button.closest(".work-item");
+  if (button.classList.contains("add-material-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    const input = workItem.querySelector(".material-input");
+    const label = input?.value.trim() || "";
+    if (!workId || !input) return;
+    if (!label) {
+      window.alert("Escreve o nome do novo material.");
+      return;
+    }
+
+    button.disabled = true;
+    input.disabled = true;
+    try {
+      await api(`/api/works/${workId}/materials`, {
+        method: "POST",
+        body: JSON.stringify({ label })
+      });
+      await refreshWorksView({ workId, detailTab: "materials" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+      input.disabled = false;
+    }
+    return;
+  }
+
   if (button.classList.contains("add-process-step-btn")) {
     if (!workItem) return;
     const workId = workItem.dataset.workId;
@@ -1216,8 +1293,28 @@ async function handleWorksInteraction(event) {
   const materialItem = button.closest(".material-item");
   if (materialItem) {
     const workId = materialItem.dataset.workId;
+    const materialId = materialItem.dataset.materialId;
     const materialKey = materialItem.dataset.materialKey;
-    if (!workId || !materialKey) return;
+    if (!workId || (!materialId && !materialKey)) return;
+
+    if (button.classList.contains("material-delete-btn")) {
+      const confirmed = window.confirm("Tem a certeza que quer eliminar este material?");
+      if (!confirmed) return;
+
+      button.disabled = true;
+      try {
+        await api(`/api/works/${workId}/materials/item/${materialId}`, {
+          method: "DELETE"
+        });
+        await refreshWorksView({ workId, detailTab: "materials" });
+        await loadLogs();
+      } catch (error) {
+        window.alert(error.message);
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
 
     if (button.classList.contains("upload-material-btn")) {
       const input = materialItem.querySelector(".material-file");
@@ -1236,7 +1333,10 @@ async function handleWorksInteraction(event) {
 
       button.disabled = true;
       try {
-        const updatedWork = await api(`/api/works/${workId}/materials/${materialKey}/upload`, {
+        const endpoint = materialId
+          ? `/api/works/${workId}/materials/item/${materialId}/upload`
+          : `/api/works/${workId}/materials/${materialKey}/upload`;
+        const updatedWork = await api(endpoint, {
           method: "POST",
           body: formData
         });
@@ -1393,10 +1493,11 @@ async function handleMaterialCheckboxChange(event) {
   if (!materialItem) return;
 
   const workId = materialItem.dataset.workId;
+  const materialId = materialItem.dataset.materialId;
   const materialKey = materialItem.dataset.materialKey;
   const orderedInput = materialItem.querySelector(".material-ordered");
   const arrivedInput = materialItem.querySelector(".material-arrived");
-  if (!workId || !materialKey || !orderedInput || !arrivedInput) return;
+  if (!workId || (!materialId && !materialKey) || !orderedInput || !arrivedInput) return;
 
   const isOrderedToggle = changedInput.classList.contains("material-ordered");
   const isArrivedToggle = changedInput.classList.contains("material-arrived");
@@ -1406,7 +1507,10 @@ async function handleMaterialCheckboxChange(event) {
   orderedInput.disabled = true;
   arrivedInput.disabled = true;
   try {
-    const updatedWork = await api(`/api/works/${workId}/materials/${materialKey}`, {
+    const endpoint = materialId
+      ? `/api/works/${workId}/materials/item/${materialId}`
+      : `/api/works/${workId}/materials/${materialKey}`;
+    const updatedWork = await api(endpoint, {
       method: "PATCH",
       body: JSON.stringify({ ordered, arrived })
     });
@@ -1505,6 +1609,15 @@ function handleWorkToggle(event) {
 }
 
 function handleProcessStepInputKeydown(event) {
+  const materialInput = event.target.closest(".material-input");
+  if (materialInput && event.key === "Enter") {
+    event.preventDefault();
+    const workItem = materialInput.closest(".work-item");
+    const addButton = workItem?.querySelector(".add-material-btn");
+    if (addButton) addButton.click();
+    return;
+  }
+
   const input = event.target.closest(".process-step-input");
   if (!input || event.key !== "Enter") return;
   event.preventDefault();
