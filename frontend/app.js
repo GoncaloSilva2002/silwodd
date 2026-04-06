@@ -50,6 +50,7 @@ let logsFilterWork = "";
 let clientsCache = [];
 let usersCache = [];
 let logsCache = [];
+let draggedProcessStepId = null;
 
 const materialTypes = [
   { key: "stone", label: "Pedra" },
@@ -339,14 +340,14 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
     `
     : "";
   return `
-    <div class="process-item" data-work-id="${work.id}" data-step-id="${step.id || ""}" data-step-key="${step.key || ""}">
+    <div class="process-item" draggable="true" data-work-id="${work.id}" data-step-id="${step.id || ""}" data-step-key="${step.key || ""}">
       <div class="process-step-head">
         <span class="process-step-icon ${step.key ? "" : "custom"}">${processStepIcons[step.key] || "+"}</span>
         <h4>${step.label}</h4>
       </div>
       <div class="process-item-tools">
-        <button type="button" class="process-order-btn move-step-up" ${stepIndex === 0 ? "disabled" : ""} aria-label="Mover etapa para cima">Subir</button>
-        <button type="button" class="process-order-btn move-step-down" ${stepIndex === totalSteps - 1 ? "disabled" : ""} aria-label="Mover etapa para baixo">Descer</button>
+        <span class="process-drag-handle" aria-hidden="true" title="Arrasta para reordenar">::</span>
+        <span class="muted process-order-label">Posicao ${stepIndex + 1} de ${totalSteps}</span>
         <button type="button" class="process-delete-btn" aria-label="Eliminar etapa">Eliminar</button>
       </div>
       <button type="button" class="process-toggle-btn ${done ? "done" : ""}" ${blockedByOrder ? "disabled" : ""} aria-label="${done ? "Etapa feita" : "Marcar etapa como feita"}">
@@ -1252,37 +1253,6 @@ async function handleWorksInteraction(event) {
   }
 
   const processItem = button.closest(".process-item");
-  if (processItem && (button.classList.contains("move-step-up") || button.classList.contains("move-step-down"))) {
-    const workId = processItem.dataset.workId;
-    if (!workId) return;
-    const processGrid = workItem?.querySelector(".process-grid");
-    const items = Array.from(processGrid?.querySelectorAll(".process-item") || []);
-    const currentIndex = items.indexOf(processItem);
-    if (currentIndex < 0) return;
-
-    const targetIndex = button.classList.contains("move-step-up") ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= items.length) return;
-
-    const reorderedIds = items.map((item) => Number(item.dataset.stepId)).filter((value) => Number.isInteger(value) && value > 0);
-    const [movedStepId] = reorderedIds.splice(currentIndex, 1);
-    reorderedIds.splice(targetIndex, 0, movedStepId);
-
-    button.disabled = true;
-    try {
-      await api(`/api/works/${workId}/process/reorder`, {
-        method: "PATCH",
-        body: JSON.stringify({ stepIds: reorderedIds })
-      });
-      await refreshWorksView({ workId, detailTab: "process" });
-      await loadLogs();
-    } catch (error) {
-      window.alert(error.message);
-    } finally {
-      button.disabled = false;
-    }
-    return;
-  }
-
   if (processItem && button.classList.contains("process-delete-btn")) {
     const workId = processItem.dataset.workId;
     const stepId = processItem.dataset.stepId;
@@ -1543,6 +1513,86 @@ function handleProcessStepInputKeydown(event) {
   if (addButton) addButton.click();
 }
 
+async function persistProcessStepOrder(workItem) {
+  const workId = workItem?.dataset.workId;
+  const processGrid = workItem?.querySelector(".process-grid");
+  if (!workId || !processGrid) return;
+
+  const reorderedIds = Array.from(processGrid.querySelectorAll(".process-item"))
+    .map((item) => Number(item.dataset.stepId))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (!reorderedIds.length) return;
+
+  await api(`/api/works/${workId}/process/reorder`, {
+    method: "PATCH",
+    body: JSON.stringify({ stepIds: reorderedIds })
+  });
+  await refreshWorksView({ workId, detailTab: "process" });
+  await loadLogs();
+}
+
+function handleProcessDragStart(event) {
+  const processItem = event.target.closest(".process-item");
+  if (!processItem) return;
+
+  draggedProcessStepId = processItem.dataset.stepId || null;
+  processItem.classList.add("dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggedProcessStepId || "");
+  }
+}
+
+function handleProcessDragOver(event) {
+  const processItem = event.target.closest(".process-item");
+  if (!processItem || !draggedProcessStepId) return;
+
+  event.preventDefault();
+  const processGrid = processItem.closest(".process-grid");
+  const draggingItem = processGrid?.querySelector(`.process-item[data-step-id="${draggedProcessStepId}"]`);
+  if (!processGrid || !draggingItem || draggingItem === processItem) return;
+
+  const rect = processItem.getBoundingClientRect();
+  const insertAfter = event.clientY > rect.top + rect.height / 2;
+  processGrid.querySelectorAll(".process-item").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+  processItem.classList.add(insertAfter ? "drop-after" : "drop-before");
+
+  if (insertAfter) {
+    processItem.after(draggingItem);
+  } else {
+    processItem.before(draggingItem);
+  }
+}
+
+async function handleProcessDrop(event) {
+  const processGrid = event.target.closest(".process-grid");
+  if (!processGrid || !draggedProcessStepId) return;
+  event.preventDefault();
+
+  const workItem = processGrid.closest(".work-item");
+  processGrid.classList.add("is-saving-order");
+  try {
+    await persistProcessStepOrder(workItem);
+  } catch (error) {
+    window.alert(error.message);
+    await refreshWorksView({ workId: workItem?.dataset.workId, detailTab: "process" });
+  } finally {
+    processGrid.classList.remove("is-saving-order");
+    processGrid.querySelectorAll(".process-item").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+    draggedProcessStepId = null;
+  }
+}
+
+function handleProcessDragEnd(event) {
+  const processItem = event.target.closest(".process-item");
+  if (processItem) {
+    processItem.classList.remove("dragging");
+  }
+  worksList.querySelectorAll(".process-item").forEach((item) => item.classList.remove("drop-before", "drop-after", "dragging"));
+  draggedProcessStepId = null;
+}
+
 [worksList].forEach((list) => {
   list.addEventListener("click", handleWorksInteraction);
   list.addEventListener("click", handleWorkToggle);
@@ -1550,6 +1600,10 @@ function handleProcessStepInputKeydown(event) {
   list.addEventListener("click", handleMaterialCheckboxChange);
   list.addEventListener("click", handleProcessCheckboxChange);
   list.addEventListener("keydown", handleProcessStepInputKeydown);
+  list.addEventListener("dragstart", handleProcessDragStart);
+  list.addEventListener("dragover", handleProcessDragOver);
+  list.addEventListener("drop", handleProcessDrop);
+  list.addEventListener("dragend", handleProcessDragEnd);
 });
 
 updateStatusFilterButtons();

@@ -316,9 +316,9 @@ button:hover {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  align-items: center;
 }
 
-.process-order-btn,
 .process-delete-btn {
   width: auto;
   min-width: auto;
@@ -326,10 +326,46 @@ button:hover {
   font-size: 13px;
 }
 
+.process-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  background: #f3f0e7;
+  color: var(--primary);
+  cursor: grab;
+  font-weight: 700;
+  letter-spacing: 1px;
+  user-select: none;
+}
+
+.process-order-label {
+  flex: 1 1 auto;
+}
+
 .process-delete-btn {
   background: #fff4ef;
   color: #8a2f12;
   border-color: #e7b8a8;
+}
+
+.process-item.dragging {
+  opacity: 0.55;
+}
+
+.process-item.drop-before {
+  box-shadow: inset 0 4px 0 #1b1b18;
+}
+
+.process-item.drop-after {
+  box-shadow: inset 0 -4px 0 #1b1b18;
+}
+
+.process-grid.is-saving-order {
+  opacity: 0.75;
 }
 
 .process-toggle-btn {
