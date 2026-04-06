@@ -263,7 +263,7 @@ async function getNextTableId(tableName) {
 async function getOrderedMaterials(workId) {
   return query(
     `
-      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou, nota_encomenda, invoice_photo_path
+      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou, nota_encomenda, invoice_photo_path, note_encomenda_pdf_path
       FROM materiais
       WHERE id_obra = ?
       ORDER BY id ASC
@@ -298,6 +298,10 @@ async function ensureMaterialsExtraColumns() {
   const hasInvoicePhotoPath = columns.some((column) => String(column.Field) === "invoice_photo_path");
   if (!hasInvoicePhotoPath) {
     await query("ALTER TABLE materiais ADD COLUMN invoice_photo_path VARCHAR(255) NULL");
+  }
+  const hasOrderNotePdfPath = columns.some((column) => String(column.Field) === "note_encomenda_pdf_path");
+  if (!hasOrderNotePdfPath) {
+    await query("ALTER TABLE materiais ADD COLUMN note_encomenda_pdf_path VARCHAR(255) NULL");
   }
 }
 
@@ -628,7 +632,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     materials = await query(
       `
         SELECT id_obra, nome_material, pdf_path, encomendado, chegou
-             , id, nota_encomenda, invoice_photo_path
+             , id, nota_encomenda, invoice_photo_path, note_encomenda_pdf_path
         FROM materiais
         WHERE id_obra IN (${placeholdersObras})
         ORDER BY id_obra ASC, id ASC
@@ -698,7 +702,8 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       ordered: Number(Boolean(material.encomendado)),
       arrived: Number(Boolean(material.chegou)),
       order_note: material.nota_encomenda || "",
-      invoice_photo_path: material.invoice_photo_path || null
+      invoice_photo_path: material.invoice_photo_path || null,
+      order_note_pdf_path: material.note_encomenda_pdf_path || null
     }));
     const workSteps = stepsGrouped.get(obra.id) || [];
     const stepByName = new Map(workSteps.map((step) => [step.nome_etapa, step]));
@@ -1057,6 +1062,42 @@ app.patch("/api/works/:id/materials/item/:materialId/order-note", requireAuth, a
   } catch (error) {
     return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao guardar nota de encomenda." });
   }
+});
+
+app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth, requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const materialId = Number(req.params.materialId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+
+  upload.single("pdf")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do PDF." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona um ficheiro PDF." });
+
+    try {
+      const existing = await query(
+        "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+        [materialId, id]
+      );
+      if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+
+      const publicPath = `/uploads/${req.file.filename}`;
+      await query(
+        "UPDATE materiais SET note_encomenda_pdf_path = ? WHERE id = ? AND id_obra = ?",
+        [publicPath, materialId, id]
+      );
+
+      const rows = await getWorks(null);
+      const work = rows.find((item) => item.id === id);
+      await createAuditLog(req, "upload_material_order_note_pdf", "material", materialId, id, {
+        label: existing[0].nome_material,
+        note_encomenda_pdf_path: publicPath
+      });
+      return res.json(work || null);
+    } catch (_err) {
+      return res.status(500).json({ error: "Erro ao guardar PDF da nota de encomenda." });
+    }
+  });
 });
 
 app.delete("/api/works/:id/materials/item/:materialId", requireAuth, requireAdmin, async (req, res) => {
@@ -1453,6 +1494,15 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
     const addressValue = String(address || "").trim();
     if (nifValue && !/^\d{9}$/.test(nifValue)) {
       return res.status(400).json({ error: "NIF deve ter 9 digitos." });
+    }
+    if (nifValue && schemaInfo.clientesNifColumn) {
+      const existingByNif = await query(
+        `SELECT id FROM clientes WHERE ${schemaInfo.clientesNifColumn} = ? LIMIT 1`,
+        [nifValue]
+      );
+      if (existingByNif[0]) {
+        return res.status(409).json({ error: "Ja existe um cliente com esse NIF." });
+      }
     }
     const nextClientId = await getNextTableId("clientes");
     const insertColumns = ["id", "nome", "telefone", "email"];

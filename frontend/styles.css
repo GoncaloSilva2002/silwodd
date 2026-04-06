@@ -551,10 +551,6 @@ body.role-funcionario .process-item-tools {
   margin-top: 10px;
 }
 
-.material-order-note-input {
-  min-height: 88px;
-}
-
 .material-invoice-links {
   display: flex;
   flex-wrap: wrap;

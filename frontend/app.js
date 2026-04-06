@@ -51,6 +51,7 @@ let clientsCache = [];
 let usersCache = [];
 let logsCache = [];
 let draggedProcessStepId = null;
+let pendingMaterialReceipt = { workId: null, materialId: null };
 
 const defaultMaterialTypes = [
   { key: "stone", label: "Pedra" },
@@ -228,7 +229,8 @@ function getWorkMaterials(work) {
       ordered: Boolean(material.ordered),
       arrived: Boolean(material.arrived),
       order_note: material.order_note || "",
-      invoice_photo_path: material.invoice_photo_path || null
+      invoice_photo_path: material.invoice_photo_path || null,
+      order_note_pdf_path: material.order_note_pdf_path || null
     }));
   }
 
@@ -240,7 +242,8 @@ function getWorkMaterials(work) {
     ordered: Boolean(work?.[`${material.key}_ordered`]),
     arrived: Boolean(work?.[`${material.key}_arrived`]),
     order_note: "",
-    invoice_photo_path: null
+    invoice_photo_path: null,
+    order_note_pdf_path: null
   }));
 }
 
@@ -249,8 +252,16 @@ function materialHtml(work, material) {
   const ordered = Boolean(material.ordered);
   const arrived = Boolean(material.arrived);
   const invoicePhotoPath = material.invoice_photo_path || null;
-  const orderNote = material.order_note || "";
+  const orderNotePdfPath = material.order_note_pdf_path || null;
   const canManageMaterials = user.role === "admin";
+  const orderNoteHtml = orderNotePdfPath
+    ? `
+      <div class="material-links">
+        <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" target="_blank" rel="noopener noreferrer">Ver nota</a>
+        <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" download>Download nota</a>
+      </div>
+    `
+    : `<span class="muted">Sem nota em PDF</span>`;
   const invoicePhotoHtml = invoicePhotoPath
     ? `
       <div class="material-links">
@@ -294,16 +305,18 @@ function materialHtml(work, material) {
       </div>
       <div class="material-order-note-box">
         <label><strong>Nota de encomenda</strong></label>
-        <textarea class="material-order-note-input" placeholder="Escreve a nota de encomenda...">${escapeHtml(orderNote)}</textarea>
-        <button type="button" class="save-material-order-note-btn">Guardar nota</button>
+        <div class="material-order-note-links">${orderNoteHtml}</div>
+        ${canManageMaterials ? `
+        <div class="material-actions">
+          <input type="file" class="material-order-note-file" accept="application/pdf" />
+          <button type="button" class="upload-material-order-note-btn">Anexar nota PDF</button>
+        </div>
+        ` : ""}
       </div>
       <div class="material-invoice-box">
         <label><strong>Fatura de rececao</strong></label>
         <div class="material-invoice-links">${invoicePhotoHtml}</div>
-        <div class="material-actions">
-          <input type="file" class="material-invoice-file" accept="image/*" capture="environment" />
-          <button type="button" class="upload-material-invoice-btn">Anexar foto da fatura</button>
-        </div>
+        <input type="file" class="material-invoice-file hidden" accept="image/*" capture="environment" />
       </div>
       <div class="material-actions">
         <input type="file" class="material-file" accept="application/pdf" />
@@ -337,8 +350,8 @@ function updateMaterialItemFromWork(materialItem, work) {
   const ordered = Boolean(material.ordered);
   const arrived = Boolean(material.arrived);
   const pdfPath = material.pdf_path || null;
-  const orderNote = material.order_note || "";
   const invoicePhotoPath = material.invoice_photo_path || null;
+  const orderNotePdfPath = material.order_note_pdf_path || null;
 
   const orderedInput = materialItem.querySelector(".material-ordered");
   const arrivedInput = materialItem.querySelector(".material-arrived");
@@ -351,14 +364,21 @@ function updateMaterialItemFromWork(materialItem, work) {
     arrivedInput.setAttribute("aria-label", arrived ? "Recebido" : "Marcar como recebido");
   }
 
-  const orderNoteInput = materialItem.querySelector(".material-order-note-input");
-  if (orderNoteInput) {
-    orderNoteInput.value = orderNote;
-  }
-
   const linksContainer = materialItem.querySelector(".material-head > :last-child");
   if (linksContainer) {
     linksContainer.outerHTML = renderMaterialLinks(pdfPath);
+  }
+
+  const orderNoteLinksContainer = materialItem.querySelector(".material-order-note-links");
+  if (orderNoteLinksContainer) {
+    orderNoteLinksContainer.innerHTML = orderNotePdfPath
+      ? `
+        <div class="material-links">
+          <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" target="_blank" rel="noopener noreferrer">Ver nota</a>
+          <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" download>Download nota</a>
+        </div>
+      `
+      : `<span class="muted">Sem nota em PDF</span>`;
   }
 
   const invoiceLinksContainer = materialItem.querySelector(".material-invoice-links");
@@ -1407,25 +1427,25 @@ async function handleWorksInteraction(event) {
       return;
     }
 
-    if (button.classList.contains("upload-material-invoice-btn")) {
-      const input = materialItem.querySelector(".material-invoice-file");
+    if (button.classList.contains("upload-material-order-note-btn")) {
+      const input = materialItem.querySelector(".material-order-note-file");
       const file = input.files?.[0];
-      if (!materialId) return;
+      if (!materialId || !input) return;
       if (!file) {
-        window.alert("Seleciona ou tira uma foto da fatura primeiro.");
+        window.alert("Seleciona primeiro o PDF da nota de encomenda.");
         return;
       }
-      if (!String(file.type || "").startsWith("image/")) {
-        window.alert("So sao permitidas imagens para a fatura.");
+      if (file.type !== "application/pdf") {
+        window.alert("A nota de encomenda tem de ser um PDF.");
         return;
       }
 
       const formData = new FormData();
-      formData.append("invoice_photo", file);
+      formData.append("pdf", file);
 
       button.disabled = true;
       try {
-        const updatedWork = await api(`/api/works/${workId}/materials/item/${materialId}/invoice-photo`, {
+        const updatedWork = await api(`/api/works/${workId}/materials/item/${materialId}/order-note-pdf`, {
           method: "POST",
           body: formData
         });
@@ -1435,28 +1455,6 @@ async function handleWorksInteraction(event) {
       } catch (error) {
         window.alert(error.message);
       } finally {
-        button.disabled = false;
-      }
-      return;
-    }
-
-    if (button.classList.contains("save-material-order-note-btn")) {
-      const noteInput = materialItem.querySelector(".material-order-note-input");
-      if (!materialId || !noteInput) return;
-
-      button.disabled = true;
-      noteInput.disabled = true;
-      try {
-        const updatedWork = await api(`/api/works/${workId}/materials/item/${materialId}/order-note`, {
-          method: "PATCH",
-          body: JSON.stringify({ order_note: noteInput.value })
-        });
-        updateMaterialItemFromWork(materialItem, updatedWork);
-        await loadLogs();
-      } catch (error) {
-        window.alert(error.message);
-      } finally {
-        noteInput.disabled = false;
         button.disabled = false;
       }
       return;
@@ -1617,7 +1615,11 @@ async function handleMaterialCheckboxChange(event) {
   const invoiceLinksText = String(materialItem.querySelector(".material-invoice-links")?.textContent || "").trim();
   const hasInvoicePhoto = invoiceLinksText && !invoiceLinksText.includes("Sem foto da fatura");
   if (isArrivedToggle && arrived && !hasInvoicePhoto) {
-    window.alert("Antes de marcar como recebido tens de anexar a foto da fatura.");
+    const invoiceInput = materialItem.querySelector(".material-invoice-file");
+    if (!invoiceInput || !materialId) return;
+    pendingMaterialReceipt = { workId, materialId };
+    invoiceInput.value = "";
+    invoiceInput.click();
     return;
   }
 
@@ -1638,6 +1640,55 @@ async function handleMaterialCheckboxChange(event) {
   } finally {
     orderedInput.disabled = false;
     arrivedInput.disabled = false;
+  }
+}
+
+async function handleMaterialInvoiceFileChange(event) {
+  const input = event.target.closest(".material-invoice-file");
+  if (!input) return;
+
+  const materialItem = input.closest(".material-item");
+  const workItem = input.closest(".work-item");
+  const workId = materialItem?.dataset.workId;
+  const materialId = materialItem?.dataset.materialId;
+  const file = input.files?.[0];
+  if (!materialItem || !workItem || !workId || !materialId) return;
+  if (!file) {
+    pendingMaterialReceipt = { workId: null, materialId: null };
+    return;
+  }
+  if (!String(file.type || "").startsWith("image/")) {
+    window.alert("So sao permitidas imagens para a fatura.");
+    input.value = "";
+    pendingMaterialReceipt = { workId: null, materialId: null };
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("invoice_photo", file);
+  input.disabled = true;
+
+  try {
+    await api(`/api/works/${workId}/materials/item/${materialId}/invoice-photo`, {
+      method: "POST",
+      body: formData
+    });
+
+    if (pendingMaterialReceipt.workId === workId && pendingMaterialReceipt.materialId === materialId) {
+      await api(`/api/works/${workId}/materials/item/${materialId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ arrived: true })
+      });
+    }
+
+    await refreshWorksView({ workId, detailTab: "materials" });
+    await loadLogs();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    pendingMaterialReceipt = { workId: null, materialId: null };
+    input.disabled = false;
+    input.value = "";
   }
 }
 
@@ -1832,6 +1883,7 @@ function handleProcessDragEnd(event) {
   list.addEventListener("click", handleWorkToggle);
   list.addEventListener("change", handleWorkStatusChange);
   list.addEventListener("click", handleMaterialCheckboxChange);
+  list.addEventListener("change", handleMaterialInvoiceFileChange);
   list.addEventListener("click", handleProcessCheckboxChange);
   list.addEventListener("keydown", handleProcessStepInputKeydown);
   list.addEventListener("dragstart", handleProcessDragStart);
