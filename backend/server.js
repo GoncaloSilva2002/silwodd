@@ -13,6 +13,7 @@ const { requireAuth } = require("./middleware/auth");
 
 const app = express();
 const port = process.env.PORT || 3000;
+const normalizedPort = Number(port);
 const jwtSecret = process.env.JWT_SECRET || "";
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
 const nodeEnv = process.env.NODE_ENV || "development";
@@ -30,34 +31,27 @@ const materialMap = {
   paint: "Tinta"
 };
 const materialKeys = new Set(Object.keys(materialMap));
-const processStepMap = {
-  kitchen_design: "Desenho da cozinha",
-  cutting: "Corte",
-  cnc: "CNC",
-  assembly: "Montagem",
-  painting: "Pintura",
-  loaded: "Carregar",
-  unloaded: "Descarregar",
-  installation_start: "Inicio de montagem",
-  installation_end: "Fim de montagem"
-};
-const processStepOrder = [
-  "kitchen_design",
-  "cutting",
-  "cnc",
-  "assembly",
-  "painting",
-  "loaded",
-  "unloaded",
-  "installation_start",
-  "installation_end"
+const defaultProcessSteps = [
+  { key: "kitchen_design", label: "Desenho da cozinha" },
+  { key: "cutting", label: "Corte" },
+  { key: "cnc", label: "CNC" },
+  { key: "assembly", label: "Montagem" },
+  { key: "painting", label: "Pintura" },
+  { key: "loaded", label: "Carregar" },
+  { key: "unloaded", label: "Descarregar" },
+  { key: "installation_start", label: "Inicio de montagem" },
+  { key: "installation_end", label: "Fim de montagem" }
 ];
+const processStepMap = Object.fromEntries(defaultProcessSteps.map((step) => [step.key, step.label]));
+const processStepOrder = defaultProcessSteps.map((step) => step.key);
 const processStepKeys = new Set(Object.keys(processStepMap));
+const processStepNameToKey = new Map(defaultProcessSteps.map((step) => [step.label, step.key]));
 const schemaInfo = {
   obrasDueDateColumn: null,
   obrasPriorityColumn: null,
   obrasObservationsColumn: null,
-  clientesNifColumn: null
+  clientesNifColumn: null,
+  obrasProcessConfiguredColumn: null
 };
 
 const statusCodeToCandidates = {
@@ -165,12 +159,9 @@ async function getEstadoIdFromCode(statusCode) {
   return row?.id || null;
 }
 
-async function isKitchenDesignDone(workId) {
-  const stepName = processStepMap.kitchen_design;
-  const rows = await query(
-    "SELECT concluida FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
-    [workId, stepName]
-  );
+async function isWorkReadyForInProgress(workId) {
+  const rows = await getOrderedProcessSteps(workId);
+  if (!rows.length) return true;
   return Number(Boolean(rows[0]?.concluida)) === 1;
 }
 
@@ -183,6 +174,8 @@ async function loadSchemaInfo() {
   schemaInfo.obrasPriorityColumn = priorityCandidates.find((name) => names.has(name)) || null;
   const observationsCandidates = ["observacoes", "observacoes_obra", "notes"];
   schemaInfo.obrasObservationsColumn = observationsCandidates.find((name) => names.has(name)) || null;
+  const processConfiguredCandidates = ["process_steps_configured", "etapas_configuradas"];
+  schemaInfo.obrasProcessConfiguredColumn = processConfiguredCandidates.find((name) => names.has(name)) || null;
 
   const clientColumns = await query("SHOW COLUMNS FROM clientes");
   const clientNames = new Set(clientColumns.map((column) => String(column.Field)));
@@ -214,6 +207,14 @@ async function ensureClientsNifColumn() {
   }
 }
 
+async function ensureWorksProcessConfiguredColumn() {
+  const columns = await query("SHOW COLUMNS FROM obras");
+  const hasColumn = columns.some((column) => String(column.Field) === "process_steps_configured");
+  if (!hasColumn) {
+    await query("ALTER TABLE obras ADD COLUMN process_steps_configured TINYINT(1) NOT NULL DEFAULT 0");
+  }
+}
+
 async function getNextTableId(tableName) {
   const rows = await query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${tableName}`);
   return Number(rows[0]?.nextId || 1);
@@ -237,6 +238,105 @@ async function ensureProcessStepsTable() {
   const hasPdfPath = columns.some((column) => String(column.Field) === "pdf_path");
   if (!hasPdfPath) {
     await query("ALTER TABLE obra_etapas ADD COLUMN pdf_path VARCHAR(255) NULL");
+  }
+  const hasOrderIndex = columns.some((column) => String(column.Field) === "order_index");
+  if (!hasOrderIndex) {
+    await query("ALTER TABLE obra_etapas ADD COLUMN order_index INT NOT NULL DEFAULT 0");
+  }
+}
+
+function normalizeProcessStepLabel(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function getProcessStepKeyByName(stepName) {
+  return processStepNameToKey.get(stepName) || null;
+}
+
+async function getOrderedProcessSteps(workId) {
+  return query(
+    `
+      SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index
+      FROM obra_etapas
+      WHERE id_obra = ?
+      ORDER BY order_index ASC, id ASC
+    `,
+    [workId]
+  );
+}
+
+async function normalizeProcessStepOrder(workId) {
+  const steps = await getOrderedProcessSteps(workId);
+  for (let index = 0; index < steps.length; index += 1) {
+    if (Number(steps[index].order_index) === index) continue;
+    await query("UPDATE obra_etapas SET order_index = ? WHERE id = ?", [index, steps[index].id]);
+  }
+  return steps.map((step, index) => ({ ...step, order_index: index }));
+}
+
+async function ensureDefaultProcessStepsForWork(workId) {
+  const existing = await query(
+    "SELECT id, nome_etapa FROM obra_etapas WHERE id_obra = ?",
+    [workId]
+  );
+  const existingNames = new Set(existing.map((row) => String(row.nome_etapa)));
+  const nextRows = [];
+  for (const [index, step] of defaultProcessSteps.entries()) {
+    if (existingNames.has(step.label)) continue;
+    nextRows.push({ label: step.label, orderIndex: index });
+  }
+
+  for (const step of nextRows) {
+    const nextId = await getNextTableId("obra_etapas");
+    await query(
+      "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, 0, ?)",
+      [nextId, workId, step.label, step.orderIndex]
+    );
+  }
+
+  await query("UPDATE obras SET process_steps_configured = 1 WHERE id = ?", [workId]);
+  await normalizeProcessStepOrder(workId);
+}
+
+async function initializeProcessStepsForExistingWorks() {
+  const works = await query(
+    "SELECT id, process_steps_configured FROM obras"
+  );
+
+  for (const work of works) {
+    if (Number(Boolean(work.process_steps_configured)) === 1) {
+      await normalizeProcessStepOrder(work.id);
+      continue;
+    }
+    await ensureDefaultProcessStepsForWork(work.id);
+  }
+}
+
+async function recalculateWorkStatusFromProcessSteps(workId) {
+  const steps = await getOrderedProcessSteps(workId);
+  const hasSteps = steps.length > 0;
+  const allDone = hasSteps && steps.every((step) => Number(Boolean(step.concluida)) === 1);
+  const firstDone = hasSteps ? Number(Boolean(steps[0].concluida)) === 1 : false;
+
+  if (allDone) {
+    const doneEstadoId = await getEstadoIdFromCode("done");
+    if (doneEstadoId) {
+      await query("UPDATE obras SET id_estado = ? WHERE id = ?", [doneEstadoId, workId]);
+    }
+    return;
+  }
+
+  if (firstDone) {
+    const inProgressEstadoId = await getEstadoIdFromCode("in_progress");
+    if (inProgressEstadoId) {
+      await query("UPDATE obras SET id_estado = ? WHERE id = ?", [inProgressEstadoId, workId]);
+    }
+    return;
+  }
+
+  const pendingEstadoId = await getEstadoIdFromCode("pending");
+  if (pendingEstadoId) {
+    await query("UPDATE obras SET id_estado = ? WHERE id = ?", [pendingEstadoId, workId]);
   }
 }
 
@@ -442,17 +542,15 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     // eslint-disable-next-line no-console
     console.error("Erro ao carregar materiais:", error.sqlMessage || error.message);
   }
-  const stepNames = Object.values(processStepMap);
-  const placeholdersSteps = stepNames.map(() => "?").join(", ");
   try {
     processSteps = await query(
       `
-        SELECT id_obra, nome_etapa, concluida, pdf_path
+        SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index
         FROM obra_etapas
         WHERE id_obra IN (${placeholdersObras})
-          AND nome_etapa IN (${placeholdersSteps})
+        ORDER BY id_obra ASC, order_index ASC, id ASC
       `,
-      [...obraIds, ...stepNames]
+      [...obraIds]
     );
   } catch (error) {
     // eslint-disable-next-line no-console
@@ -469,8 +567,8 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   }
   const stepsGrouped = new Map();
   for (const step of processSteps) {
-    if (!stepsGrouped.has(step.id_obra)) stepsGrouped.set(step.id_obra, new Map());
-    stepsGrouped.get(step.id_obra).set(step.nome_etapa, step);
+    if (!stepsGrouped.has(step.id_obra)) stepsGrouped.set(step.id_obra, []);
+    stepsGrouped.get(step.id_obra).push(step);
   }
 
   return obras.map((obra) => {
@@ -492,13 +590,26 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       item[`${key}_ordered`] = Number(Boolean(material?.encomendado));
       item[`${key}_arrived`] = Number(Boolean(material?.chegou));
     }
-    const stepByName = stepsGrouped.get(obra.id) || new Map();
+    const workSteps = stepsGrouped.get(obra.id) || [];
+    const stepByName = new Map(workSteps.map((step) => [step.nome_etapa, step]));
     for (const [key, stepName] of Object.entries(processStepMap)) {
       const step = stepByName.get(stepName);
       item[`${key}_done`] = Number(Boolean(step?.concluida));
       item[`${key}_pdf_path`] = step?.pdf_path || null;
     }
     item.kitchen_design_done = Number(Boolean(stepByName.get(processStepMap.kitchen_design)?.concluida));
+    item.process_steps = workSteps.map((step) => {
+      const key = getProcessStepKeyByName(step.nome_etapa);
+      return {
+        id: step.id,
+        key,
+        label: step.nome_etapa,
+        done: Number(Boolean(step.concluida)),
+        pdf_path: step.pdf_path || null,
+        order_index: Number(step.order_index) || 0,
+        can_upload_pdf: key === "kitchen_design"
+      };
+    });
     return item;
   });
 }
@@ -615,8 +726,9 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     }
 
     const nextWorkId = await getNextTableId("obras");
-    const baseColumns = ["id", "nome_obra", "descricao", "id_cliente", "id_estado"];
+    const baseColumns = ["id", "nome_obra", "descricao", "id_cliente", "id_estado", "process_steps_configured"];
     const baseValues = [nextWorkId, String(title).trim(), description ? String(description).trim() : null, parsedClientId, estadoId];
+    baseValues.push(1);
     if (schemaInfo.obrasPriorityColumn) {
       baseColumns.push(schemaInfo.obrasPriorityColumn);
       baseValues.push(priorityValue);
@@ -630,6 +742,14 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
       `INSERT INTO obras (${baseColumns.join(", ")}) VALUES (${placeholders})`,
       baseValues
     );
+
+    for (const [index, step] of defaultProcessSteps.entries()) {
+      const nextStepId = await getNextTableId("obra_etapas");
+      await query(
+        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, 0, ?)",
+        [nextStepId, nextWorkId, step.label, index]
+      );
+    }
 
     const rows = await getWorks(null);
     const work = rows.find((item) => item.id === nextWorkId);
@@ -654,9 +774,9 @@ app.patch("/api/works/:id/status", requireAuth, requireAdmin, async (req, res) =
     if (!allowed.includes(status)) return res.status(400).json({ error: "Estado de obra invalido." });
 
     if (status === "in_progress") {
-      const kitchenDesignDone = await isKitchenDesignDone(id);
-      if (!kitchenDesignDone) {
-        return res.status(400).json({ error: "A obra so pode passar para Em progresso depois do Desenho da cozinha estar concluido." });
+      const firstStepDone = await isWorkReadyForInProgress(id);
+      if (!firstStepDone) {
+        return res.status(400).json({ error: "A obra so pode passar para Em progresso depois da primeira etapa estar concluida." });
       }
     }
 
@@ -723,6 +843,156 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
   }
 });
 
+async function updateProcessStepDone(workId, stepId, done) {
+  const steps = await normalizeProcessStepOrder(workId);
+  const stepIndex = steps.findIndex((step) => Number(step.id) === Number(stepId));
+  if (stepIndex < 0) {
+    throw new Error("Etapa nao encontrada.");
+  }
+
+  if (done === 1 && stepIndex > 0) {
+    const previousDone = Number(Boolean(steps[stepIndex - 1].concluida));
+    if (!previousDone) {
+      throw new Error("Conclui a etapa anterior antes de avancar.");
+    }
+  }
+
+  if (done === 0) {
+    for (let index = stepIndex + 1; index < steps.length; index += 1) {
+      if (Number(Boolean(steps[index].concluida)) === 1) {
+        throw new Error("Nao podes desmarcar esta etapa enquanto existirem etapas seguintes concluidas.");
+      }
+    }
+  }
+
+  await query("UPDATE obra_etapas SET concluida = ? WHERE id = ? AND id_obra = ?", [done, stepId, workId]);
+  await recalculateWorkStatusFromProcessSteps(workId);
+}
+
+app.post("/api/works/:id/process", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const label = normalizeProcessStepLabel(req.body?.label);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!label) return res.status(400).json({ error: "O nome da etapa e obrigatorio." });
+    if (label.length > 120) return res.status(400).json({ error: "O nome da etapa e demasiado longo." });
+
+    const existing = await query(
+      "SELECT id FROM obra_etapas WHERE id_obra = ? AND LOWER(nome_etapa) = LOWER(?) LIMIT 1",
+      [id, label]
+    );
+    if (existing[0]) {
+      return res.status(409).json({ error: "Ja existe uma etapa com esse nome nesta obra." });
+    }
+
+    const rows = await getOrderedProcessSteps(id);
+    const nextOrderIndex = rows.length;
+    const nextStepId = await getNextTableId("obra_etapas");
+    await query(
+      "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, 0, ?)",
+      [nextStepId, id, label, nextOrderIndex]
+    );
+    await recalculateWorkStatusFromProcessSteps(id);
+
+    const works = await getWorks(null);
+    const work = works.find((item) => item.id === id);
+    await createAuditLog(req, "create_process_step", "process_step", nextStepId, id, { label, order_index: nextOrderIndex });
+    return res.status(201).json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao criar etapa." });
+  }
+});
+
+app.patch("/api/works/:id/process/reorder", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const stepIds = Array.isArray(req.body?.stepIds) ? req.body.stepIds.map((item) => Number(item)) : [];
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+
+    const rows = await getOrderedProcessSteps(id);
+    if (!rows.length) return res.status(400).json({ error: "Nao existem etapas para ordenar." });
+    if (stepIds.length !== rows.length) {
+      return res.status(400).json({ error: "A nova ordem das etapas esta incompleta." });
+    }
+
+    const currentIds = new Set(rows.map((row) => Number(row.id)));
+    const nextIds = new Set(stepIds);
+    if (currentIds.size !== nextIds.size || stepIds.some((stepId) => !currentIds.has(stepId))) {
+      return res.status(400).json({ error: "A ordem indicada contem etapas invalidas." });
+    }
+
+    for (const [index, stepId] of stepIds.entries()) {
+      await query("UPDATE obra_etapas SET order_index = ? WHERE id = ? AND id_obra = ?", [index, stepId, id]);
+    }
+    await recalculateWorkStatusFromProcessSteps(id);
+
+    const works = await getWorks(null);
+    const work = works.find((item) => item.id === id);
+    await createAuditLog(req, "reorder_process_steps", "work", id, id, { step_ids: stepIds });
+    return res.json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao reordenar etapas." });
+  }
+});
+
+app.delete("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const stepId = Number(req.params.stepId);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa invalida." });
+
+    const existing = await query(
+      "SELECT id, nome_etapa FROM obra_etapas WHERE id = ? AND id_obra = ? LIMIT 1",
+      [stepId, id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
+
+    await query("DELETE FROM obra_etapas WHERE id = ? AND id_obra = ?", [stepId, id]);
+    await normalizeProcessStepOrder(id);
+    await recalculateWorkStatusFromProcessSteps(id);
+
+    const works = await getWorks(null);
+    const work = works.find((item) => item.id === id);
+    await createAuditLog(req, "delete_process_step", "process_step", stepId, id, { label: existing[0].nome_etapa });
+    return res.json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar etapa." });
+  }
+});
+
+app.patch("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const stepId = Number(req.params.stepId);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa invalida." });
+
+    const done = req.body?.done === true || req.body?.done === "true" ? 1 : 0;
+    const existing = await query(
+      "SELECT id, nome_etapa FROM obra_etapas WHERE id = ? AND id_obra = ? LIMIT 1",
+      [stepId, id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
+
+    await updateProcessStepDone(id, stepId, done);
+    const works = await getWorks(null);
+    const work = works.find((item) => item.id === id);
+    await createAuditLog(req, "update_process_step", "process_step", stepId, id, {
+      step_key: getProcessStepKeyByName(existing[0].nome_etapa),
+      label: existing[0].nome_etapa,
+      done
+    });
+    return res.json(work || null);
+  } catch (error) {
+    const message = error?.message || "Erro ao atualizar etapa.";
+    const status = message.includes("antes de avancar") || message.includes("etapas seguintes") || message.includes("nao encontrada")
+      ? 400
+      : 500;
+    return res.status(status).json({ error: message });
+  }
+});
+
 app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
@@ -730,90 +1000,25 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
     if (!processStepKeys.has(stepKey)) return res.status(400).json({ error: "Etapa invalida." });
 
-    const done = req.body?.done === true || req.body?.done === "true" ? 1 : 0;
     const stepName = processStepMap[stepKey];
-    const stepIndex = processStepOrder.indexOf(stepKey);
-    if (stepIndex < 0) return res.status(400).json({ error: "Etapa invalida." });
-
-    const allRows = await query(
-      "SELECT nome_etapa, concluida FROM obra_etapas WHERE id_obra = ?",
-      [id]
-    );
-    const doneByName = new Map();
-    for (const row of allRows) {
-      doneByName.set(row.nome_etapa, Number(Boolean(row.concluida)));
-    }
-
-    if (done === 1 && stepIndex > 0) {
-      const previousKey = processStepOrder[stepIndex - 1];
-      const previousName = processStepMap[previousKey];
-      const previousDone = Number(Boolean(doneByName.get(previousName)));
-      if (!previousDone) {
-        return res.status(400).json({ error: "Conclui a etapa anterior antes de avancar." });
-      }
-    }
-
-    if (done === 0) {
-      for (let i = stepIndex + 1; i < processStepOrder.length; i += 1) {
-        const nextKey = processStepOrder[i];
-        const nextName = processStepMap[nextKey];
-        const nextDone = Number(Boolean(doneByName.get(nextName)));
-        if (nextDone) {
-          return res.status(400).json({
-            error: "Nao podes desmarcar esta etapa enquanto existirem etapas seguintes concluidas."
-          });
-        }
-      }
-    }
-
     const existing = await query(
       "SELECT id FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
       [id, stepName]
     );
+    if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
 
-    if (existing[0]) {
-      await query("UPDATE obra_etapas SET concluida = ? WHERE id = ?", [done, existing[0].id]);
-    } else {
-      const nextProcessStepId = await getNextTableId("obra_etapas");
-      await query(
-        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida) VALUES (?, ?, ?, ?)",
-        [nextProcessStepId, id, stepName, done]
-      );
-      existing[0] = { id: nextProcessStepId };
-    }
-
-    doneByName.set(stepName, done);
-    const allProcessStepsDone = processStepOrder.every((key) => {
-      const name = processStepMap[key];
-      return Number(Boolean(doneByName.get(name))) === 1;
-    });
-    const kitchenDesignDone = Number(Boolean(doneByName.get(processStepMap.kitchen_design))) === 1;
-    if (allProcessStepsDone) {
-      const doneEstadoId = await getEstadoIdFromCode("done");
-      if (doneEstadoId) {
-        await query("UPDATE obras SET id_estado = ? WHERE id = ?", [doneEstadoId, id]);
-      }
-    } else if (kitchenDesignDone) {
-      const inProgressEstadoId = await getEstadoIdFromCode("in_progress");
-      if (inProgressEstadoId) {
-        await query("UPDATE obras SET id_estado = ? WHERE id = ?", [inProgressEstadoId, id]);
-      }
-    } else {
-      const pendingEstadoId = await getEstadoIdFromCode("pending");
-      if (pendingEstadoId) {
-        await query("UPDATE obras SET id_estado = ? WHERE id = ?", [pendingEstadoId, id]);
-      }
-    }
-
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
-    await createAuditLog(req, "update_process_step", "process_step", existing[0]?.id || null, id, {
-      step_key: stepKey,
-      done
-    });
+    const done = req.body?.done === true || req.body?.done === "true" ? 1 : 0;
+    await updateProcessStepDone(id, existing[0].id, done);
+    const works = await getWorks(null);
+    const work = works.find((item) => item.id === id);
+    await createAuditLog(req, "update_process_step", "process_step", existing[0].id, id, { step_key: stepKey, done });
     return res.json(work || null);
   } catch (error) {
-    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar etapa." });
+    const message = error?.message || "Erro ao atualizar etapa.";
+    const status = message.includes("antes de avancar") || message.includes("etapas seguintes") || message.includes("nao encontrada")
+      ? 400
+      : 500;
+    return res.status(status).json({ error: message });
   }
 });
 
@@ -841,9 +1046,10 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
         await query("UPDATE obra_etapas SET pdf_path = ? WHERE id = ?", [publicPath, existing[0].id]);
       } else {
         const nextProcessStepId = await getNextTableId("obra_etapas");
+        const orderedSteps = await getOrderedProcessSteps(id);
         await query(
-          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path) VALUES (?, ?, ?, 0, ?)",
-          [nextProcessStepId, id, stepName, publicPath]
+          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path, order_index) VALUES (?, ?, ?, 0, ?, ?)",
+          [nextProcessStepId, id, stepName, publicPath, orderedSteps.length]
         );
         existing[0] = { id: nextProcessStepId };
       }
@@ -1079,6 +1285,19 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
 
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));
 
+function validateRuntimeConfig() {
+  const dbPort = Number(process.env.DB_PORT || 3306);
+  if (!Number.isInteger(normalizedPort) || normalizedPort <= 0 || normalizedPort > 65535) {
+    throw new Error(`PORT invalido: ${port}. Usa um porto entre 1 e 65535.`);
+  }
+  if (normalizedPort === dbPort) {
+    throw new Error(
+      `PORT (${normalizedPort}) nao pode ser igual ao DB_PORT (${dbPort}). ` +
+      "Define PORT=3000 para a app e mantém DB_PORT=3306 para o MySQL."
+    );
+  }
+}
+
 async function start() {
   try {
     if (!jwtSecret) {
@@ -1087,6 +1306,7 @@ async function start() {
     if (isProd && jwtSecret.length < 32) {
       throw new Error("JWT_SECRET demasiado curto para producao (minimo 32 caracteres).");
     }
+    validateRuntimeConfig();
 
     await initDb();
     await ensureProcessStepsTable();
@@ -1094,10 +1314,22 @@ async function start() {
     await ensureWorksPriorityColumn();
     await ensureWorksObservationsColumn();
     await ensureClientsNifColumn();
+    await ensureWorksProcessConfiguredColumn();
+    await initializeProcessStepsForExistingWorks();
     await loadSchemaInfo();
-    app.listen(port, () => {
+    const server = app.listen(normalizedPort, () => {
       // eslint-disable-next-line no-console
-      console.log("Server running on port " + port);
+      console.log("Server running on port " + normalizedPort);
+    });
+    server.on("error", (error) => {
+      if (error.code === "EADDRINUSE") {
+        // eslint-disable-next-line no-console
+        console.error(`Falha ao arrancar: o porto ${normalizedPort} ja esta a ser usado por outro processo.`);
+        process.exit(1);
+      }
+      // eslint-disable-next-line no-console
+      console.error("Falha ao arrancar servidor:", error.message);
+      process.exit(1);
     });
   } catch (error) {
     // eslint-disable-next-line no-console

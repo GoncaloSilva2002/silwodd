@@ -57,7 +57,7 @@ const materialTypes = [
   { key: "hardware", label: "Ferragens" },
   { key: "paint", label: "Tinta" }
 ];
-const processSteps = [
+const defaultProcessSteps = [
   { key: "kitchen_design", label: "Desenho da cozinha" },
   { key: "cutting", label: "Corte" },
   { key: "cnc", label: "CNC" },
@@ -295,14 +295,38 @@ function updateMaterialItemFromWork(materialItem, work) {
   }
 }
 
-function processStepHtml(work, step) {
-  const stepIndex = processSteps.findIndex((item) => item.key === step.key);
-  const previousStep = stepIndex > 0 ? processSteps[stepIndex - 1] : null;
-  const previousDone = previousStep ? Boolean(work[`${previousStep.key}_done`]) : true;
-  const done = Boolean(work[`${step.key}_done`]);
-  const pdfPath = work[`${step.key}_pdf_path`] || null;
+function getWorkProcessSteps(work) {
+  if (Array.isArray(work?.process_steps) && work.process_steps.length) {
+    return work.process_steps.map((step, index) => ({
+      id: step.id,
+      key: step.key || null,
+      label: step.label,
+      done: Boolean(step.done),
+      pdf_path: step.pdf_path || null,
+      can_upload_pdf: Boolean(step.can_upload_pdf),
+      order_index: Number(step.order_index ?? index)
+    }));
+  }
+
+  return defaultProcessSteps.map((step, index) => ({
+    id: null,
+    key: step.key,
+    label: step.label,
+    done: Boolean(work?.[`${step.key}_done`]),
+    pdf_path: work?.[`${step.key}_pdf_path`] || null,
+    can_upload_pdf: step.key === "kitchen_design",
+    order_index: index
+  }));
+}
+
+function processStepHtml(work, step, stepIndex, totalSteps) {
+  const steps = getWorkProcessSteps(work);
+  const previousStep = stepIndex > 0 ? steps[stepIndex - 1] : null;
+  const previousDone = previousStep ? Boolean(previousStep.done) : true;
+  const done = Boolean(step.done);
+  const pdfPath = step.pdf_path || null;
   const blockedByOrder = !previousDone && !done;
-  const canUploadPdf = step.key === "kitchen_design";
+  const canUploadPdf = Boolean(step.can_upload_pdf);
   const pdfHtml = canUploadPdf
     ? `
       <div class="process-pdf-links">
@@ -315,10 +339,15 @@ function processStepHtml(work, step) {
     `
     : "";
   return `
-    <div class="process-item" data-work-id="${work.id}" data-step-key="${step.key}">
+    <div class="process-item" data-work-id="${work.id}" data-step-id="${step.id || ""}" data-step-key="${step.key || ""}">
       <div class="process-step-head">
-        <span class="process-step-icon">${processStepIcons[step.key] || ""}</span>
+        <span class="process-step-icon ${step.key ? "" : "custom"}">${processStepIcons[step.key] || "+"}</span>
         <h4>${step.label}</h4>
+      </div>
+      <div class="process-item-tools">
+        <button type="button" class="process-order-btn move-step-up" ${stepIndex === 0 ? "disabled" : ""} aria-label="Mover etapa para cima">Subir</button>
+        <button type="button" class="process-order-btn move-step-down" ${stepIndex === totalSteps - 1 ? "disabled" : ""} aria-label="Mover etapa para baixo">Descer</button>
+        <button type="button" class="process-delete-btn" aria-label="Eliminar etapa">Eliminar</button>
       </div>
       <button type="button" class="process-toggle-btn ${done ? "done" : ""}" ${blockedByOrder ? "disabled" : ""} aria-label="${done ? "Etapa feita" : "Marcar etapa como feita"}">
         <span class="process-toggle-square" aria-hidden="true"></span>
@@ -348,19 +377,24 @@ function applyProcessSequenceUI(workItem) {
 
 function updateProcessItemFromWork(processItem, work) {
   if (!processItem || !work) return;
+  const stepId = Number(processItem.dataset.stepId);
   const stepKey = processItem.dataset.stepKey;
-  if (!stepKey) return;
+  const step = getWorkProcessSteps(work).find((item) => {
+    if (stepId) return Number(item.id) === stepId;
+    return item.key && item.key === stepKey;
+  });
+  if (!step) return;
 
   const doneButton = processItem.querySelector(".process-toggle-btn");
-  const done = Boolean(work[`${stepKey}_done`]);
+  const done = Boolean(step.done);
   if (doneButton) {
     doneButton.classList.toggle("done", done);
     doneButton.setAttribute("aria-label", done ? "Etapa feita" : "Marcar etapa como feita");
   }
 
-  if (stepKey === "kitchen_design") {
+  if (step.can_upload_pdf) {
     const linksWrapper = processItem.querySelector(".process-pdf-links");
-    const pdfPath = work[`${stepKey}_pdf_path`] || null;
+    const pdfPath = step.pdf_path || null;
     if (linksWrapper) {
       linksWrapper.innerHTML = renderMaterialLinks(pdfPath);
     }
@@ -408,7 +442,8 @@ function updateWorkCardFromWork(workItem, work) {
 
 function syncWorkStatusOptions(statusSelect, work) {
   if (!statusSelect || !work) return;
-  const canSetInProgress = Boolean(work.kitchen_design_done);
+  const steps = getWorkProcessSteps(work);
+  const canSetInProgress = !steps.length || Boolean(steps[0]?.done);
   const inProgressOption = statusSelect.querySelector('option[value="in_progress"]');
   if (inProgressOption) {
     inProgressOption.disabled = !canSetInProgress;
@@ -448,7 +483,9 @@ function renderWorks(items, target) {
   }
   target.innerHTML = items
     .map(
-      (w) => `
+      (w) => {
+        const processSteps = getWorkProcessSteps(w);
+        return `
       <article class="work-item" data-work-id="${w.id}">
         <button type="button" class="work-summary-btn">
           <span><strong>${escapeHtml(w.title)}</strong></span>
@@ -488,8 +525,12 @@ function renderWorks(items, target) {
             </div>
           </div>
           <div class="detail-panel detail-panel-process hidden">
+            <div class="process-editor-bar">
+              <input class="process-step-input" placeholder="Nova etapa..." />
+              <button type="button" class="add-process-step-btn">Adicionar etapa</button>
+            </div>
             <div class="process-grid">
-              ${processSteps.map((step) => processStepHtml(w, step)).join("")}
+              ${processSteps.map((step, index) => processStepHtml(w, step, index, processSteps.length)).join("")}
             </div>
           </div>
           <div class="detail-panel detail-panel-observations hidden">
@@ -501,7 +542,8 @@ function renderWorks(items, target) {
           </div>
         </div>
       </article>
-    `
+    `;
+      }
     )
     .join("");
 }
@@ -762,6 +804,30 @@ async function loadWorksTab() {
   worksList.querySelectorAll(".work-status-select, .save-work-status-btn, .work-priority-select, .save-work-priority-btn").forEach((element) => {
     element.disabled = user.role !== "admin";
   });
+}
+
+function reopenWorkDetails(workId, detailTab = null) {
+  if (!workId) return;
+  const workItem = worksList.querySelector(`.work-item[data-work-id="${workId}"]`);
+  const details = workItem?.querySelector(".work-details");
+  const summaryButton = workItem?.querySelector(".work-summary-btn");
+  if (!workItem || !details || !summaryButton) return;
+
+  details.classList.remove("hidden");
+  summaryButton.classList.add("expanded");
+
+  if (!detailTab) return;
+  const detailButton = workItem.querySelector(`.detail-tab-btn[data-detail-tab="${detailTab}"]`);
+  if (detailButton) {
+    detailButton.click();
+  }
+}
+
+async function refreshWorksView(options = {}) {
+  await loadWorksTab();
+  if (options.workId) {
+    reopenWorkDetails(options.workId, options.detailTab || null);
+  }
 }
 
 async function loadUsers() {
@@ -1112,6 +1178,35 @@ async function handleWorksInteraction(event) {
   if (!button) return;
 
   const workItem = button.closest(".work-item");
+  if (button.classList.contains("add-process-step-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    const input = workItem.querySelector(".process-step-input");
+    const label = input?.value.trim() || "";
+    if (!workId || !input) return;
+    if (!label) {
+      window.alert("Escreve o nome da nova etapa.");
+      return;
+    }
+
+    button.disabled = true;
+    input.disabled = true;
+    try {
+      await api(`/api/works/${workId}/process`, {
+        method: "POST",
+        body: JSON.stringify({ label })
+      });
+      await refreshWorksView({ workId, detailTab: "process" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+      input.disabled = false;
+    }
+    return;
+  }
+
   if (button.classList.contains("save-work-status-btn")) {
     await saveWorkStatus(workItem, button);
     return;
@@ -1157,6 +1252,60 @@ async function handleWorksInteraction(event) {
   }
 
   const processItem = button.closest(".process-item");
+  if (processItem && (button.classList.contains("move-step-up") || button.classList.contains("move-step-down"))) {
+    const workId = processItem.dataset.workId;
+    if (!workId) return;
+    const processGrid = workItem?.querySelector(".process-grid");
+    const items = Array.from(processGrid?.querySelectorAll(".process-item") || []);
+    const currentIndex = items.indexOf(processItem);
+    if (currentIndex < 0) return;
+
+    const targetIndex = button.classList.contains("move-step-up") ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= items.length) return;
+
+    const reorderedIds = items.map((item) => Number(item.dataset.stepId)).filter((value) => Number.isInteger(value) && value > 0);
+    const [movedStepId] = reorderedIds.splice(currentIndex, 1);
+    reorderedIds.splice(targetIndex, 0, movedStepId);
+
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/process/reorder`, {
+        method: "PATCH",
+        body: JSON.stringify({ stepIds: reorderedIds })
+      });
+      await refreshWorksView({ workId, detailTab: "process" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (processItem && button.classList.contains("process-delete-btn")) {
+    const workId = processItem.dataset.workId;
+    const stepId = processItem.dataset.stepId;
+    if (!workId || !stepId) return;
+
+    const confirmed = window.confirm("Tem a certeza que quer eliminar esta etapa?");
+    if (!confirmed) return;
+
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/process/item/${stepId}`, {
+        method: "DELETE"
+      });
+      await refreshWorksView({ workId, detailTab: "process" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
   if (processItem && button.classList.contains("upload-process-btn")) {
     const workId = processItem.dataset.workId;
     const stepKey = processItem.dataset.stepKey;
@@ -1310,22 +1459,26 @@ async function handleProcessCheckboxChange(event) {
   if (!processItem || !workItem) return;
 
   const workId = processItem.dataset.workId;
+  const stepId = processItem.dataset.stepId;
   const stepKey = processItem.dataset.stepKey;
-  if (!workId || !stepKey) return;
+  if (!workId || (!stepId && !stepKey)) return;
 
   const nextDone = !toggleButton.classList.contains("done");
   const previousValue = !nextDone;
   toggleButton.disabled = true;
 
   try {
-    const updatedWork = await api(`/api/works/${workId}/process/${stepKey}`, {
+    const endpoint = stepId
+      ? `/api/works/${workId}/process/item/${stepId}`
+      : `/api/works/${workId}/process/${stepKey}`;
+    const updatedWork = await api(endpoint, {
       method: "PATCH",
       body: JSON.stringify({ done: nextDone })
     });
     updateProcessItemFromWork(processItem, updatedWork);
     updateWorkCardFromWork(workItem, updatedWork);
     applyProcessSequenceUI(workItem);
-    await loadWorksTab();
+    await refreshWorksView({ workId, detailTab: "process" });
     await loadLogs();
   } catch (error) {
     toggleButton.classList.toggle("done", previousValue);
@@ -1381,12 +1534,22 @@ function handleWorkToggle(event) {
   summaryButton.classList.toggle("expanded", !details.classList.contains("hidden"));
 }
 
+function handleProcessStepInputKeydown(event) {
+  const input = event.target.closest(".process-step-input");
+  if (!input || event.key !== "Enter") return;
+  event.preventDefault();
+  const workItem = input.closest(".work-item");
+  const addButton = workItem?.querySelector(".add-process-step-btn");
+  if (addButton) addButton.click();
+}
+
 [worksList].forEach((list) => {
   list.addEventListener("click", handleWorksInteraction);
   list.addEventListener("click", handleWorkToggle);
   list.addEventListener("change", handleWorkStatusChange);
   list.addEventListener("click", handleMaterialCheckboxChange);
   list.addEventListener("click", handleProcessCheckboxChange);
+  list.addEventListener("keydown", handleProcessStepInputKeydown);
 });
 
 updateStatusFilterButtons();

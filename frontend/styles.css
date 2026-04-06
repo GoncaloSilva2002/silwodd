@@ -292,11 +292,44 @@ button:hover {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
+.process-editor-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.process-step-input {
+  flex: 1 1 240px;
+}
+
 .process-item {
   border: 1px dashed var(--border);
   border-radius: 8px;
   padding: 10px;
   background: #faf9f5;
+  display: grid;
+  gap: 8px;
+}
+
+.process-item-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.process-order-btn,
+.process-delete-btn {
+  width: auto;
+  min-width: auto;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.process-delete-btn {
+  background: #fff4ef;
+  color: #8a2f12;
+  border-color: #e7b8a8;
 }
 
 .process-toggle-btn {
@@ -368,6 +401,11 @@ button:hover {
   background: #ece9df;
   color: var(--primary);
   flex: 0 0 40px;
+}
+
+.process-step-icon.custom {
+  font-size: 22px;
+  font-weight: 700;
 }
 
 .process-step-icon svg {
