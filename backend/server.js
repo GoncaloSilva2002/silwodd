@@ -486,6 +486,35 @@ async function ensureAuditLogsTable() {
       INDEX idx_audit_logs_work_id (work_id)
     )
   `);
+  const columns = await query("SHOW COLUMNS FROM audit_logs");
+  const names = new Set(columns.map((column) => String(column.Field)));
+  if (!names.has("user_id")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN user_id INT NULL");
+  }
+  if (!names.has("username")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN username VARCHAR(120) NULL");
+  }
+  if (!names.has("user_role")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN user_role VARCHAR(50) NULL");
+  }
+  if (!names.has("action_type")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN action_type VARCHAR(120) NOT NULL DEFAULT ''");
+  }
+  if (!names.has("entity_type")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN entity_type VARCHAR(120) NOT NULL DEFAULT ''");
+  }
+  if (!names.has("entity_id")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN entity_id INT NULL");
+  }
+  if (!names.has("work_id")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN work_id INT NULL");
+  }
+  if (!names.has("details")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN details TEXT NULL");
+  }
+  if (!names.has("created_at")) {
+    await query("ALTER TABLE audit_logs ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP");
+  }
 }
 
 async function createAuditLog(req, actionType, entityType, entityId = null, workId = null, details = null) {
