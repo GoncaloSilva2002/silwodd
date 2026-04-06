@@ -263,7 +263,8 @@ async function getNextTableId(tableName) {
 async function getOrderedMaterials(workId) {
   return query(
     `
-      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou, nota_encomenda, invoice_photo_path, note_encomenda_pdf_path
+      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou, nota_encomenda, invoice_photo_path, note_encomenda_pdf_path,
+             ordered_by_user_id, ordered_by_username, ordered_at, arrived_by_user_id, arrived_by_username, arrived_at
       FROM materiais
       WHERE id_obra = ?
       ORDER BY id ASC
@@ -302,6 +303,30 @@ async function ensureMaterialsExtraColumns() {
   const hasOrderNotePdfPath = columns.some((column) => String(column.Field) === "note_encomenda_pdf_path");
   if (!hasOrderNotePdfPath) {
     await query("ALTER TABLE materiais ADD COLUMN note_encomenda_pdf_path VARCHAR(255) NULL");
+  }
+  const hasOrderedByUserId = columns.some((column) => String(column.Field) === "ordered_by_user_id");
+  if (!hasOrderedByUserId) {
+    await query("ALTER TABLE materiais ADD COLUMN ordered_by_user_id INT NULL");
+  }
+  const hasOrderedByUsername = columns.some((column) => String(column.Field) === "ordered_by_username");
+  if (!hasOrderedByUsername) {
+    await query("ALTER TABLE materiais ADD COLUMN ordered_by_username VARCHAR(120) NULL");
+  }
+  const hasOrderedAt = columns.some((column) => String(column.Field) === "ordered_at");
+  if (!hasOrderedAt) {
+    await query("ALTER TABLE materiais ADD COLUMN ordered_at DATETIME NULL");
+  }
+  const hasArrivedByUserId = columns.some((column) => String(column.Field) === "arrived_by_user_id");
+  if (!hasArrivedByUserId) {
+    await query("ALTER TABLE materiais ADD COLUMN arrived_by_user_id INT NULL");
+  }
+  const hasArrivedByUsername = columns.some((column) => String(column.Field) === "arrived_by_username");
+  if (!hasArrivedByUsername) {
+    await query("ALTER TABLE materiais ADD COLUMN arrived_by_username VARCHAR(120) NULL");
+  }
+  const hasArrivedAt = columns.some((column) => String(column.Field) === "arrived_at");
+  if (!hasArrivedAt) {
+    await query("ALTER TABLE materiais ADD COLUMN arrived_at DATETIME NULL");
   }
 }
 
@@ -632,7 +657,8 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     materials = await query(
       `
         SELECT id_obra, nome_material, pdf_path, encomendado, chegou
-             , id, nota_encomenda, invoice_photo_path, note_encomenda_pdf_path
+             , id, nota_encomenda, invoice_photo_path, note_encomenda_pdf_path,
+               ordered_by_user_id, ordered_by_username, ordered_at, arrived_by_user_id, arrived_by_username, arrived_at
         FROM materiais
         WHERE id_obra IN (${placeholdersObras})
         ORDER BY id_obra ASC, id ASC
@@ -703,7 +729,11 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       arrived: Number(Boolean(material.chegou)),
       order_note: material.nota_encomenda || "",
       invoice_photo_path: material.invoice_photo_path || null,
-      order_note_pdf_path: material.note_encomenda_pdf_path || null
+      order_note_pdf_path: material.note_encomenda_pdf_path || null,
+      ordered_by_username: material.ordered_by_username || null,
+      ordered_at: material.ordered_at || null,
+      arrived_by_username: material.arrived_by_username || null,
+      arrived_at: material.arrived_at || null
     }));
     const workSteps = stepsGrouped.get(obra.id) || [];
     const stepByName = new Map(workSteps.map((step) => [step.nome_etapa, step]));
@@ -934,10 +964,28 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
       await query(
         `UPDATE materiais
          SET encomendado = ?, chegou = ?,
+             ordered_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+             ordered_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+             ordered_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
+             arrived_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+             arrived_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+             arrived_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
              data_encomenda = IF(? = 1 AND data_encomenda IS NULL, CURDATE(), data_encomenda),
              data_chegada = IF(? = 1 AND data_chegada IS NULL, CURDATE(), data_chegada)
          WHERE id = ?`,
-        [ordered, arrived, ordered, arrived, existing[0].id]
+        [
+          ordered,
+          arrived,
+          ordered, req.user?.id || null,
+          ordered, req.user?.username || null,
+          ordered,
+          arrived, req.user?.id || null,
+          arrived, req.user?.username || null,
+          arrived,
+          ordered,
+          arrived,
+          existing[0].id
+        ]
       );
     } else {
       const nextMaterialId = await getNextTableId("materiais");
@@ -1017,10 +1065,29 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
     await query(
       `UPDATE materiais
        SET encomendado = ?, chegou = ?,
+           ordered_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+           ordered_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+           ordered_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
+           arrived_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+           arrived_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
+           arrived_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
            data_encomenda = IF(? = 1 AND data_encomenda IS NULL, CURDATE(), data_encomenda),
            data_chegada = IF(? = 1 AND data_chegada IS NULL, CURDATE(), data_chegada)
        WHERE id = ? AND id_obra = ?`,
-      [ordered, arrived, ordered, arrived, materialId, id]
+      [
+        ordered,
+        arrived,
+        ordered, req.user?.id || null,
+        ordered, req.user?.username || null,
+        ordered,
+        arrived, req.user?.id || null,
+        arrived, req.user?.username || null,
+        arrived,
+        ordered,
+        arrived,
+        materialId,
+        id
+      ]
     );
 
     const rows = await getWorks(null);
@@ -1500,7 +1567,10 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
     );
     await createAuditLog(req, "create_client", "client", nextClientId, null, {
       name: String(name).trim(),
-      nif: nifValue || null
+      nif: nifValue || null,
+      address: addressValue || null,
+      phone: phone || null,
+      email: email || null
     });
     return res.status(201).json(rows[0]);
   } catch (error) {
@@ -1620,11 +1690,20 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "Nao podes eliminar o teu proprio utilizador." });
     }
 
+    const existing = await query("SELECT id, username, role FROM funcionarios WHERE id = ? LIMIT 1", [id]);
+    if (!existing[0]) {
+      return res.status(404).json({ error: "Utilizador nao encontrado." });
+    }
+
     const result = await query("DELETE FROM funcionarios WHERE id = ?", [id]);
     if (!result.affectedRows) {
       return res.status(404).json({ error: "Utilizador nao encontrado." });
     }
-    await createAuditLog(req, "delete_user", "user", id, null, { deleted_user_id: id });
+    await createAuditLog(req, "delete_user", "user", id, null, {
+      deleted_user_id: id,
+      deleted_username: existing[0].username || null,
+      deleted_role: existing[0].role || null
+    });
     return res.json({ success: true });
   } catch (_error) {
     return res.status(500).json({ error: "Erro ao eliminar utilizador." });

@@ -231,7 +231,11 @@ function getWorkMaterials(work) {
       arrived: Boolean(material.arrived),
       order_note: material.order_note || "",
       invoice_photo_path: material.invoice_photo_path || null,
-      order_note_pdf_path: material.order_note_pdf_path || null
+      order_note_pdf_path: material.order_note_pdf_path || null,
+      ordered_by_username: material.ordered_by_username || null,
+      ordered_at: material.ordered_at || null,
+      arrived_by_username: material.arrived_by_username || null,
+      arrived_at: material.arrived_at || null
     }));
   }
 
@@ -244,8 +248,18 @@ function getWorkMaterials(work) {
     arrived: Boolean(work?.[`${material.key}_arrived`]),
     order_note: "",
     invoice_photo_path: null,
-    order_note_pdf_path: null
+    order_note_pdf_path: null,
+    ordered_by_username: null,
+    ordered_at: null,
+    arrived_by_username: null,
+    arrived_at: null
   }));
+}
+
+function formatMaterialCheckMeta(username, when, actionLabel) {
+  if (!username) return "";
+  const formattedWhen = when ? formatLogDate(when) : "";
+  return formattedWhen ? `${actionLabel} por ${username} em ${formattedWhen}` : `${actionLabel} por ${username}`;
 }
 
 function materialHtml(work, material) {
@@ -254,6 +268,8 @@ function materialHtml(work, material) {
   const arrived = Boolean(material.arrived);
   const invoicePhotoPath = material.invoice_photo_path || null;
   const orderNotePdfPath = material.order_note_pdf_path || null;
+  const orderedMeta = formatMaterialCheckMeta(material.ordered_by_username, material.ordered_at, "Encomendado");
+  const arrivedMeta = formatMaterialCheckMeta(material.arrived_by_username, material.arrived_at, "Recebido");
   const canManageMaterials = user.role === "admin";
   const orderNoteHtml = orderNotePdfPath
     ? `
@@ -298,12 +314,14 @@ function materialHtml(work, material) {
           <span class="material-toggle-square" aria-hidden="true"></span>
         </button>
       </div>
+      ${orderedMeta ? `<p class="muted material-check-meta">${escapeHtml(orderedMeta)}</p>` : ""}
       <div class="material-toggle-row">
         <span>Recebido</span>
         <button type="button" class="material-toggle-btn material-arrived ${arrived ? "done" : ""}" aria-label="${arrived ? "Recebido" : "Marcar como recebido"}">
           <span class="material-toggle-square" aria-hidden="true"></span>
         </button>
       </div>
+      ${arrivedMeta ? `<p class="muted material-check-meta">${escapeHtml(arrivedMeta)}</p>` : ""}
       <div class="material-order-note-box">
         <label><strong>Nota de encomenda</strong></label>
         <div class="material-order-note-links">${orderNoteHtml}</div>
@@ -316,10 +334,6 @@ function materialHtml(work, material) {
         <label><strong>Fatura de rececao</strong></label>
         <div class="material-invoice-links">${invoicePhotoHtml}</div>
         <input type="file" class="material-invoice-file hidden" accept="image/*" capture="environment" />
-      </div>
-      <div class="material-actions">
-        <input type="file" class="material-file" accept="application/pdf" />
-        <button type="button" class="upload-material-btn">Anexar PDF</button>
       </div>
     </div>
   `;
@@ -580,12 +594,79 @@ function formatLogDate(value) {
   return date.toLocaleString("pt-PT");
 }
 
+function formatLogAction(actionType) {
+  const labels = {
+    create_work: "Criou obra",
+    update_work_status: "Alterou estado da obra",
+    update_work_priority: "Alterou prioridade da obra",
+    update_work_observations: "Alterou observacoes da obra",
+    create_material: "Adicionou material",
+    update_material: "Alterou material",
+    upload_material_order_note_pdf: "Anexou nota de encomenda",
+    upload_material_pdf: "Anexou PDF do material",
+    upload_material_invoice_photo: "Anexou foto da fatura",
+    delete_material: "Eliminou material",
+    create_process_step: "Adicionou etapa",
+    reorder_process_steps: "Moveu etapas",
+    delete_process_step: "Eliminou etapa",
+    update_process_step: "Alterou etapa",
+    upload_process_pdf: "Anexou PDF da etapa",
+    create_client: "Criou cliente",
+    create_user: "Criou utilizador",
+    delete_user: "Eliminou utilizador"
+  };
+  return labels[actionType] || actionType || "-";
+}
+
+function formatLogEntity(entityType) {
+  const labels = {
+    work: "Obra",
+    material: "Material",
+    process_step: "Etapa",
+    client: "Cliente",
+    user: "Utilizador"
+  };
+  return labels[entityType] || entityType || "-";
+}
+
 function formatLogDetails(details) {
   if (!details) return "";
   if (typeof details === "string") return details;
+  const labels = {
+    title: "Titulo",
+    status: "Estado",
+    priority: "Prioridade",
+    client_id: "ID cliente",
+    label: "Nome",
+    material_key: "Material",
+    step_key: "Etapa",
+    ordered: "Encomendado",
+    arrived: "Recebido",
+    pdf_path: "PDF",
+    invoice_photo_path: "Foto fatura",
+    note_encomenda_pdf_path: "Nota encomenda",
+    step_ids: "Nova ordem",
+    order_index: "Posicao",
+    observations: "Observacoes",
+    username: "Username",
+    role: "Role",
+    deleted_user_id: "ID utilizador eliminado",
+    deleted_username: "Utilizador eliminado",
+    deleted_role: "Role eliminada",
+    name: "Nome",
+    nif: "NIF",
+    address: "Morada",
+    phone: "Telefone",
+    email: "Email",
+    done: "Concluida"
+  };
   return Object.entries(details)
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
-    .map(([key, value]) => `${key}: ${value}`)
+    .map(([key, value]) => {
+      const label = labels[key] || key;
+      const formattedValue = Array.isArray(value) ? value.join(" > ") : value;
+      return `${label}: ${formattedValue}`;
+    })
     .join(" | ");
 }
 
@@ -737,10 +818,10 @@ function renderLogs(items) {
     .map(
       (item) => `
       <article class="client-item">
-        <h3>${escapeHtml(item.action_type || "-")}</h3>
+        <h3>${escapeHtml(formatLogAction(item.action_type))}</h3>
         <p><strong>Utilizador:</strong> ${escapeHtml(item.username || "-")} (${escapeHtml(item.user_role || "-")})</p>
-        <p><strong>Entidade:</strong> ${escapeHtml(item.entity_type || "-")} ${escapeHtml(item.entity_id || "-")}</p>
-        <p><strong>Obra:</strong> ${escapeHtml(item.work_title || "-")} ${item.work_id ? `(ID: ${escapeHtml(item.work_id)})` : ""}</p>
+        <p><strong>Entidade:</strong> ${escapeHtml(formatLogEntity(item.entity_type))} ${escapeHtml(item.entity_id || "-")}</p>
+        <p><strong>Obra:</strong> ${escapeHtml(item.work_title || "Sem obra associada")} ${item.work_id ? `(ID: ${escapeHtml(item.work_id)})` : ""}</p>
         <p><strong>Data:</strong> ${escapeHtml(formatLogDate(item.created_at))}</p>
         <p class="muted">${escapeHtml(formatLogDetails(item.details) || "-")}</p>
       </article>
@@ -1383,41 +1464,6 @@ async function handleWorksInteraction(event) {
         });
         await refreshWorksView({ workId, detailTab: "materials" });
         await loadLogs();
-      } catch (error) {
-        window.alert(error.message);
-      } finally {
-        button.disabled = false;
-      }
-      return;
-    }
-
-    if (button.classList.contains("upload-material-btn")) {
-      const input = materialItem.querySelector(".material-file");
-      const file = input.files?.[0];
-      if (!file) {
-        window.alert("Seleciona um ficheiro PDF primeiro.");
-        return;
-      }
-      if (file.type !== "application/pdf") {
-        window.alert("So sao permitidos ficheiros PDF.");
-        return;
-      }
-
-      const formData = new FormData();
-      formData.append("pdf", file);
-
-      button.disabled = true;
-      try {
-        const endpoint = materialId
-          ? `/api/works/${workId}/materials/item/${materialId}/upload`
-          : `/api/works/${workId}/materials/${materialKey}/upload`;
-        const updatedWork = await api(endpoint, {
-          method: "POST",
-          body: formData
-        });
-        updateMaterialItemFromWork(materialItem, updatedWork);
-        await loadLogs();
-        input.value = "";
       } catch (error) {
         window.alert(error.message);
       } finally {
