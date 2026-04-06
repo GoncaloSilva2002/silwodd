@@ -133,6 +133,25 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }
 });
 
+const imageUpload = multer({
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (req, file, cb) => {
+      const rawExt = path.extname(String(file.originalname || "")).toLowerCase();
+      const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".heic"].includes(rawExt) ? rawExt : ".jpg";
+      const uploadKey = String(req.params.materialId || req.params.id || "material").replace(/[^a-zA-Z0-9_-]/g, "");
+      cb(null, `${req.params.id}-${uploadKey}-${Date.now()}${safeExt}`);
+    }
+  }),
+  fileFilter: (_req, file, cb) => {
+    if (!String(file.mimetype || "").startsWith("image/")) {
+      return cb(new Error("Apenas imagens sao permitidas."));
+    }
+    return cb(null, true);
+  },
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
+
 function requireAdmin(req, res, next) {
   if (req.user?.role !== "admin") {
     return res.status(403).json({ error: "Apenas admin pode executar esta acao." });
@@ -244,7 +263,7 @@ async function getNextTableId(tableName) {
 async function getOrderedMaterials(workId) {
   return query(
     `
-      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou
+      SELECT id, id_obra, nome_material, pdf_path, encomendado, chegou, nota_encomenda, invoice_photo_path
       FROM materiais
       WHERE id_obra = ?
       ORDER BY id ASC
@@ -267,6 +286,18 @@ async function ensureDefaultMaterialsForWork(workId) {
       "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, 0, 0)",
       [nextId, workId, material.label]
     );
+  }
+}
+
+async function ensureMaterialsExtraColumns() {
+  const columns = await query("SHOW COLUMNS FROM materiais");
+  const hasOrderNote = columns.some((column) => String(column.Field) === "nota_encomenda");
+  if (!hasOrderNote) {
+    await query("ALTER TABLE materiais ADD COLUMN nota_encomenda TEXT NULL");
+  }
+  const hasInvoicePhotoPath = columns.some((column) => String(column.Field) === "invoice_photo_path");
+  if (!hasInvoicePhotoPath) {
+    await query("ALTER TABLE materiais ADD COLUMN invoice_photo_path VARCHAR(255) NULL");
   }
 }
 
@@ -597,7 +628,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     materials = await query(
       `
         SELECT id_obra, nome_material, pdf_path, encomendado, chegou
-             , id
+             , id, nota_encomenda, invoice_photo_path
         FROM materiais
         WHERE id_obra IN (${placeholdersObras})
         ORDER BY id_obra ASC, id ASC
@@ -665,7 +696,9 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       label: material.nome_material,
       pdf_path: material.pdf_path || null,
       ordered: Number(Boolean(material.encomendado)),
-      arrived: Number(Boolean(material.chegou))
+      arrived: Number(Boolean(material.chegou)),
+      order_note: material.nota_encomenda || "",
+      invoice_photo_path: material.invoice_photo_path || null
     }));
     const workSteps = stepsGrouped.get(obra.id) || [];
     const stepByName = new Map(workSteps.map((step) => [step.nome_etapa, step]));
@@ -924,7 +957,7 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
   }
 });
 
-app.post("/api/works/:id/materials", requireAuth, async (req, res) => {
+app.post("/api/works/:id/materials", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const label = normalizeMaterialLabel(req.body?.label);
@@ -965,10 +998,13 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
     const ordered = req.body?.ordered === true || req.body?.ordered === "true" ? 1 : 0;
     const arrived = req.body?.arrived === true || req.body?.arrived === "true" ? 1 : 0;
     const existing = await query(
-      "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+      "SELECT id, nome_material, invoice_photo_path FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
       [materialId, id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+    if (arrived === 1 && !existing[0].invoice_photo_path) {
+      return res.status(400).json({ error: "Para marcar como recebido tens de anexar uma foto da fatura." });
+    }
 
     await query(
       `UPDATE materiais
@@ -992,7 +1028,38 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
   }
 });
 
-app.delete("/api/works/:id/materials/item/:materialId", requireAuth, async (req, res) => {
+app.patch("/api/works/:id/materials/item/:materialId/order-note", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const materialId = Number(req.params.materialId);
+    const orderNote = String(req.body?.order_note || "").trim();
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+
+    const existing = await query(
+      "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+      [materialId, id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+
+    await query(
+      "UPDATE materiais SET nota_encomenda = ? WHERE id = ? AND id_obra = ?",
+      [orderNote || null, materialId, id]
+    );
+
+    const rows = await getWorks(null);
+    const work = rows.find((item) => item.id === id);
+    await createAuditLog(req, "update_material_order_note", "material", materialId, id, {
+      label: existing[0].nome_material,
+      order_note: orderNote
+    });
+    return res.json(work || null);
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao guardar nota de encomenda." });
+  }
+});
+
+app.delete("/api/works/:id/materials/item/:materialId", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const materialId = Number(req.params.materialId);
@@ -1051,7 +1118,7 @@ async function updateProcessStepDone(req, workId, stepId, done) {
   await recalculateWorkStatusFromProcessSteps(workId);
 }
 
-app.post("/api/works/:id/process", requireAuth, async (req, res) => {
+app.post("/api/works/:id/process", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const label = normalizeProcessStepLabel(req.body?.label);
@@ -1085,7 +1152,7 @@ app.post("/api/works/:id/process", requireAuth, async (req, res) => {
   }
 });
 
-app.patch("/api/works/:id/process/reorder", requireAuth, async (req, res) => {
+app.patch("/api/works/:id/process/reorder", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const stepIds = Array.isArray(req.body?.stepIds) ? req.body.stepIds.map((item) => Number(item)) : [];
@@ -1117,7 +1184,7 @@ app.patch("/api/works/:id/process/reorder", requireAuth, async (req, res) => {
   }
 });
 
-app.delete("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) => {
+app.delete("/api/works/:id/process/item/:stepId", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const stepId = Number(req.params.stepId);
@@ -1320,6 +1387,42 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
       return res.json(work || null);
     } catch (_err) {
       return res.status(500).json({ error: "Erro ao guardar PDF." });
+    }
+  });
+});
+
+app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const materialId = Number(req.params.materialId);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+
+  imageUpload.single("invoice_photo")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload da foto." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona ou tira uma foto da fatura." });
+
+    try {
+      const existing = await query(
+        "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+        [materialId, id]
+      );
+      if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+
+      const publicPath = `/uploads/${req.file.filename}`;
+      await query(
+        "UPDATE materiais SET invoice_photo_path = ? WHERE id = ? AND id_obra = ?",
+        [publicPath, materialId, id]
+      );
+
+      const rows = await getWorks(null);
+      const work = rows.find((item) => item.id === id);
+      await createAuditLog(req, "upload_material_invoice_photo", "material", materialId, id, {
+        label: existing[0].nome_material,
+        invoice_photo_path: publicPath
+      });
+      return res.json(work || null);
+    } catch (_err) {
+      return res.status(500).json({ error: "Erro ao guardar foto da fatura." });
     }
   });
 });
@@ -1539,6 +1642,7 @@ async function start() {
     await ensureClientsNifColumn();
     await ensureClientsAddressColumn();
     await ensureWorksProcessConfiguredColumn();
+    await ensureMaterialsExtraColumns();
     await initializeMaterialsForExistingWorks();
     await initializeProcessStepsForExistingWorks();
     await loadSchemaInfo();

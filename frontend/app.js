@@ -226,7 +226,9 @@ function getWorkMaterials(work) {
       label: material.label,
       pdf_path: material.pdf_path || null,
       ordered: Boolean(material.ordered),
-      arrived: Boolean(material.arrived)
+      arrived: Boolean(material.arrived),
+      order_note: material.order_note || "",
+      invoice_photo_path: material.invoice_photo_path || null
     }));
   }
 
@@ -236,7 +238,9 @@ function getWorkMaterials(work) {
     label: material.label,
     pdf_path: work?.[`${material.key}_pdf_path`] || null,
     ordered: Boolean(work?.[`${material.key}_ordered`]),
-    arrived: Boolean(work?.[`${material.key}_arrived`])
+    arrived: Boolean(work?.[`${material.key}_arrived`]),
+    order_note: "",
+    invoice_photo_path: null
   }));
 }
 
@@ -244,6 +248,17 @@ function materialHtml(work, material) {
   const pdfPath = material.pdf_path || null;
   const ordered = Boolean(material.ordered);
   const arrived = Boolean(material.arrived);
+  const invoicePhotoPath = material.invoice_photo_path || null;
+  const orderNote = material.order_note || "";
+  const canManageMaterials = user.role === "admin";
+  const invoicePhotoHtml = invoicePhotoPath
+    ? `
+      <div class="material-links">
+        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver fatura</a>
+        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download fatura</a>
+      </div>
+    `
+    : `<span class="muted">Sem foto da fatura</span>`;
 
   return `
     <div class="material-item" data-work-id="${work.id}" data-material-id="${material.id || ""}" data-material-key="${material.key || ""}">
@@ -260,9 +275,11 @@ function materialHtml(work, material) {
             : `<span class="muted">Sem PDF</span>`
         }
       </div>
+      ${canManageMaterials ? `
       <div class="material-item-tools">
         <button type="button" class="material-delete-btn" aria-label="Eliminar material">Eliminar</button>
       </div>
+      ` : ""}
       <div class="material-toggle-row">
         <span>Encomendado</span>
         <button type="button" class="material-toggle-btn material-ordered ${ordered ? "done" : ""}" aria-label="${ordered ? "Encomendado" : "Marcar como encomendado"}">
@@ -274,6 +291,19 @@ function materialHtml(work, material) {
         <button type="button" class="material-toggle-btn material-arrived ${arrived ? "done" : ""}" aria-label="${arrived ? "Recebido" : "Marcar como recebido"}">
           <span class="material-toggle-square" aria-hidden="true"></span>
         </button>
+      </div>
+      <div class="material-order-note-box">
+        <label><strong>Nota de encomenda</strong></label>
+        <textarea class="material-order-note-input" placeholder="Escreve a nota de encomenda...">${escapeHtml(orderNote)}</textarea>
+        <button type="button" class="save-material-order-note-btn">Guardar nota</button>
+      </div>
+      <div class="material-invoice-box">
+        <label><strong>Fatura de rececao</strong></label>
+        <div class="material-invoice-links">${invoicePhotoHtml}</div>
+        <div class="material-actions">
+          <input type="file" class="material-invoice-file" accept="image/*" capture="environment" />
+          <button type="button" class="upload-material-invoice-btn">Anexar foto da fatura</button>
+        </div>
       </div>
       <div class="material-actions">
         <input type="file" class="material-file" accept="application/pdf" />
@@ -307,6 +337,8 @@ function updateMaterialItemFromWork(materialItem, work) {
   const ordered = Boolean(material.ordered);
   const arrived = Boolean(material.arrived);
   const pdfPath = material.pdf_path || null;
+  const orderNote = material.order_note || "";
+  const invoicePhotoPath = material.invoice_photo_path || null;
 
   const orderedInput = materialItem.querySelector(".material-ordered");
   const arrivedInput = materialItem.querySelector(".material-arrived");
@@ -319,9 +351,26 @@ function updateMaterialItemFromWork(materialItem, work) {
     arrivedInput.setAttribute("aria-label", arrived ? "Recebido" : "Marcar como recebido");
   }
 
+  const orderNoteInput = materialItem.querySelector(".material-order-note-input");
+  if (orderNoteInput) {
+    orderNoteInput.value = orderNote;
+  }
+
   const linksContainer = materialItem.querySelector(".material-head > :last-child");
   if (linksContainer) {
     linksContainer.outerHTML = renderMaterialLinks(pdfPath);
+  }
+
+  const invoiceLinksContainer = materialItem.querySelector(".material-invoice-links");
+  if (invoiceLinksContainer) {
+    invoiceLinksContainer.innerHTML = invoicePhotoPath
+      ? `
+        <div class="material-links">
+          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver fatura</a>
+          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download fatura</a>
+        </div>
+      `
+      : `<span class="muted">Sem foto da fatura</span>`;
   }
 }
 
@@ -368,6 +417,7 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
   const blockedByOrder = !previousDone && !done;
   const canUploadPdf = Boolean(step.can_upload_pdf);
   const checkMeta = formatProcessCheckMeta(step);
+  const canManageProcess = user.role === "admin";
   const pdfHtml = canUploadPdf
     ? `
       <div class="process-pdf-links">
@@ -380,16 +430,18 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
     `
     : "";
   return `
-    <div class="process-item" draggable="true" data-work-id="${work.id}" data-step-id="${step.id || ""}" data-step-key="${step.key || ""}">
+    <div class="process-item" draggable="${canManageProcess ? "true" : "false"}" data-work-id="${work.id}" data-step-id="${step.id || ""}" data-step-key="${step.key || ""}">
       <div class="process-step-head">
         <span class="process-step-icon ${step.key ? "" : "custom"}">${processStepIcons[step.key] || "+"}</span>
         <h4>${step.label}</h4>
       </div>
+      ${canManageProcess ? `
       <div class="process-item-tools">
         <span class="process-drag-handle" aria-hidden="true" title="Arrasta para reordenar">::</span>
         <span class="muted process-order-label">Posicao ${stepIndex + 1} de ${totalSteps}</span>
         <button type="button" class="process-delete-btn" aria-label="Eliminar etapa">Eliminar</button>
       </div>
+      ` : ""}
       <button type="button" class="process-toggle-btn ${done ? "done" : ""}" ${blockedByOrder ? "disabled" : ""} aria-label="${done ? "Etapa feita" : "Marcar etapa como feita"}">
         <span class="process-toggle-square" aria-hidden="true"></span>
       </button>
@@ -563,19 +615,23 @@ function renderWorks(items, target) {
             <button type="button" class="detail-tab-btn" data-detail-tab="observations">Observacoes</button>
           </div>
           <div class="detail-panel detail-panel-materials">
+            ${user.role === "admin" ? `
             <div class="material-editor-bar">
               <input class="material-input" placeholder="Novo material..." />
               <button type="button" class="add-material-btn">Adicionar material</button>
             </div>
+            ` : ""}
             <div class="materials-grid">
               ${materials.map((material) => materialHtml(w, material)).join("")}
             </div>
           </div>
           <div class="detail-panel detail-panel-process hidden">
+            ${user.role === "admin" ? `
             <div class="process-editor-bar">
               <input class="process-step-input" placeholder="Nova etapa..." />
               <button type="button" class="add-process-step-btn">Adicionar etapa</button>
             </div>
+            ` : ""}
             <div class="process-grid">
               ${processSteps.map((step, index) => processStepHtml(w, step, index, processSteps.length)).join("")}
             </div>
@@ -1350,6 +1406,61 @@ async function handleWorksInteraction(event) {
       }
       return;
     }
+
+    if (button.classList.contains("upload-material-invoice-btn")) {
+      const input = materialItem.querySelector(".material-invoice-file");
+      const file = input.files?.[0];
+      if (!materialId) return;
+      if (!file) {
+        window.alert("Seleciona ou tira uma foto da fatura primeiro.");
+        return;
+      }
+      if (!String(file.type || "").startsWith("image/")) {
+        window.alert("So sao permitidas imagens para a fatura.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("invoice_photo", file);
+
+      button.disabled = true;
+      try {
+        const updatedWork = await api(`/api/works/${workId}/materials/item/${materialId}/invoice-photo`, {
+          method: "POST",
+          body: formData
+        });
+        updateMaterialItemFromWork(materialItem, updatedWork);
+        await loadLogs();
+        input.value = "";
+      } catch (error) {
+        window.alert(error.message);
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
+
+    if (button.classList.contains("save-material-order-note-btn")) {
+      const noteInput = materialItem.querySelector(".material-order-note-input");
+      if (!materialId || !noteInput) return;
+
+      button.disabled = true;
+      noteInput.disabled = true;
+      try {
+        const updatedWork = await api(`/api/works/${workId}/materials/item/${materialId}/order-note`, {
+          method: "PATCH",
+          body: JSON.stringify({ order_note: noteInput.value })
+        });
+        updateMaterialItemFromWork(materialItem, updatedWork);
+        await loadLogs();
+      } catch (error) {
+        window.alert(error.message);
+      } finally {
+        noteInput.disabled = false;
+        button.disabled = false;
+      }
+      return;
+    }
   }
 
   const processItem = button.closest(".process-item");
@@ -1503,6 +1614,12 @@ async function handleMaterialCheckboxChange(event) {
   const isArrivedToggle = changedInput.classList.contains("material-arrived");
   const ordered = isOrderedToggle ? !orderedInput.classList.contains("done") : orderedInput.classList.contains("done");
   const arrived = isArrivedToggle ? !arrivedInput.classList.contains("done") : arrivedInput.classList.contains("done");
+  const invoiceLinksText = String(materialItem.querySelector(".material-invoice-links")?.textContent || "").trim();
+  const hasInvoicePhoto = invoiceLinksText && !invoiceLinksText.includes("Sem foto da fatura");
+  if (isArrivedToggle && arrived && !hasInvoicePhoto) {
+    window.alert("Antes de marcar como recebido tens de anexar a foto da fatura.");
+    return;
+  }
 
   orderedInput.disabled = true;
   arrivedInput.disabled = true;
@@ -1609,6 +1726,7 @@ function handleWorkToggle(event) {
 }
 
 function handleProcessStepInputKeydown(event) {
+  if (user.role !== "admin") return;
   const materialInput = event.target.closest(".material-input");
   if (materialInput && event.key === "Enter") {
     event.preventDefault();
@@ -1646,6 +1764,7 @@ async function persistProcessStepOrder(workItem) {
 }
 
 function handleProcessDragStart(event) {
+  if (user.role !== "admin") return;
   const processItem = event.target.closest(".process-item");
   if (!processItem) return;
 
@@ -1658,6 +1777,7 @@ function handleProcessDragStart(event) {
 }
 
 function handleProcessDragOver(event) {
+  if (user.role !== "admin") return;
   const processItem = event.target.closest(".process-item");
   if (!processItem || !draggedProcessStepId) return;
 
@@ -1679,6 +1799,7 @@ function handleProcessDragOver(event) {
 }
 
 async function handleProcessDrop(event) {
+  if (user.role !== "admin") return;
   const processGrid = event.target.closest(".process-grid");
   if (!processGrid || !draggedProcessStepId) return;
   event.preventDefault();

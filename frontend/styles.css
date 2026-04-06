@@ -529,12 +529,36 @@ body.role-funcionario .process-item h4 {
   border-color: #e7b8a8;
 }
 
+body.role-funcionario .material-editor-bar,
+body.role-funcionario .material-item-tools,
+body.role-funcionario .process-editor-bar,
+body.role-funcionario .process-item-tools {
+  display: none !important;
+}
+
 .material-toggle-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
   margin: 8px 0;
+}
+
+.material-order-note-box,
+.material-invoice-box {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.material-order-note-input {
+  min-height: 88px;
+}
+
+.material-invoice-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .material-toggle-btn {
