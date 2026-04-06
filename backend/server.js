@@ -1003,10 +1003,13 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
     const ordered = req.body?.ordered === true || req.body?.ordered === "true" ? 1 : 0;
     const arrived = req.body?.arrived === true || req.body?.arrived === "true" ? 1 : 0;
     const existing = await query(
-      "SELECT id, nome_material, invoice_photo_path FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
+      "SELECT id, nome_material, invoice_photo_path, note_encomenda_pdf_path FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
       [materialId, id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+    if (ordered === 1 && !existing[0].note_encomenda_pdf_path) {
+      return res.status(400).json({ error: "Para marcar como encomendado tens de anexar o PDF da nota de encomenda." });
+    }
     if (arrived === 1 && !existing[0].invoice_photo_path) {
       return res.status(400).json({ error: "Para marcar como recebido tens de anexar uma foto da fatura." });
     }
@@ -1030,37 +1033,6 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
     return res.json(work || null);
   } catch (error) {
     return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar material." });
-  }
-});
-
-app.patch("/api/works/:id/materials/item/:materialId/order-note", requireAuth, async (req, res) => {
-  try {
-    const id = Number(req.params.id);
-    const materialId = Number(req.params.materialId);
-    const orderNote = String(req.body?.order_note || "").trim();
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
-
-    const existing = await query(
-      "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
-      [materialId, id]
-    );
-    if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
-
-    await query(
-      "UPDATE materiais SET nota_encomenda = ? WHERE id = ? AND id_obra = ?",
-      [orderNote || null, materialId, id]
-    );
-
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
-    await createAuditLog(req, "update_material_order_note", "material", materialId, id, {
-      label: existing[0].nome_material,
-      order_note: orderNote
-    });
-    return res.json(work || null);
-  } catch (error) {
-    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao guardar nota de encomenda." });
   }
 });
 
