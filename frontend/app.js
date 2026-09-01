@@ -120,12 +120,12 @@ const processStepIcons = {
 };
 const statusOptions = [
   { value: "pending", label: "Pendente/Encomenda" },
-  { value: "in_progress", label: "Produçao" },
+  { value: "in_progress", label: "Produção" },
   { value: "done", label: "Finazalizada" }
 ];
 const priorityOptions = [
   { value: "high", label: "Alta" },
-  { value: "medium", label: "Media" },
+  { value: "medium", label: "Média" },
   { value: "low", label: "Baixa" }
 ];
 
@@ -327,7 +327,7 @@ function materialHtml(work, material) {
         <div class="material-order-note-links">${orderNoteHtml}</div>
         ${canManageMaterials ? `
         <input type="file" class="material-order-note-file hidden" accept="application/pdf" />
-        <p class="muted">Ao marcar como encomendado vai abrir o PDF da nota.</p>
+        <p class="muted">Anexo opcional.</p>
         ` : ""}
       </div>
       <div class="material-invoice-box">
@@ -584,7 +584,7 @@ function statusLabel(value) {
 
 function priorityLabel(value) {
   const found = priorityOptions.find((priority) => priority.value === value);
-  return found ? found.label : "Media";
+  return found ? found.label : "Média";
 }
 
 function formatLogDate(value) {
@@ -605,6 +605,8 @@ function formatLogAction(actionType) {
     upload_material_order_note_pdf: "Anexou nota de encomenda",
     upload_material_pdf: "Anexou PDF do material",
     upload_material_invoice_photo: "Anexou foto da fatura",
+    create_public_link: "Criou link de acompanhamento",
+    revoke_public_link: "Revogou link de acompanhamento",
     delete_material: "Eliminou material",
     create_process_step: "Adicionou etapa",
     reorder_process_steps: "Moveu etapas",
@@ -647,7 +649,7 @@ function formatLogDetails(details) {
     note_encomenda_pdf_path: "Nota encomenda",
     step_ids: "Nova ordem",
     order_index: "Posicao",
-    observations: "Observacoes",
+    observations: "Observações",
     username: "Username",
     role: "Role",
     deleted_user_id: "ID utilizador eliminado",
@@ -672,7 +674,7 @@ function formatLogDetails(details) {
 
 function renderWorks(items, target) {
   if (!items.length) {
-    target.innerHTML = "<p class='muted'>Sem registos.</p>";
+    target.innerHTML = "<div class='empty-state'><strong>Sem obras neste estado</strong><span>Experimenta outro filtro ou adiciona uma nova obra.</span></div>";
     return;
   }
   target.innerHTML = items
@@ -680,11 +682,24 @@ function renderWorks(items, target) {
       (w) => {
         const materials = getWorkMaterials(w);
         const processSteps = getWorkProcessSteps(w);
+        const completedSteps = processSteps.filter((step) => step.done).length;
+        const progressPercent = processSteps.length
+          ? Math.round((completedSteps / processSteps.length) * 100)
+          : 0;
         return `
       <article class="work-item" data-work-id="${w.id}">
         <button type="button" class="work-summary-btn">
-          <span><strong>${escapeHtml(w.title)}</strong></span>
-          <span class="work-summary-meta">Cliente: ${escapeHtml(w.client_name || "Sem cliente")} | Estado: ${escapeHtml(statusLabel(w.status))} | Prioridade: ${escapeHtml(priorityLabel(w.priority))}</span>
+          <span class="work-summary-main">
+            <strong class="work-summary-title">${escapeHtml(w.title)}</strong>
+            <span class="work-summary-client">${escapeHtml(w.client_name || "Sem cliente")}</span>
+          </span>
+          <span class="work-summary-side">
+            <span class="work-summary-meta">${escapeHtml(statusLabel(w.status))} · Prioridade ${escapeHtml(priorityLabel(w.priority))}</span>
+            <span class="work-progress-label">${completedSteps} de ${processSteps.length} etapas</span>
+            <span class="work-progress" aria-label="Progresso: ${progressPercent}%">
+              <span class="work-progress-value" style="width: ${progressPercent}%"></span>
+            </span>
+          </span>
         </button>
         <div class="work-details hidden">
           <div class="work-config-row">
@@ -707,12 +722,27 @@ function renderWorks(items, target) {
               <button type="button" class="save-work-priority-btn">Guardar prioridade</button>
             </div>
           </div>
-          <p><strong>Prazo:</strong> ${escapeHtml(w.due_date || "Sem data")}</p>
-          <p class="muted">${escapeHtml(w.description || "")}</p>
+          <div class="work-overview">
+            <div><span class="work-overview-label">Prazo</span><strong>${escapeHtml(w.due_date || "Sem data")}</strong></div>
+            <div><span class="work-overview-label">Progresso</span><strong>${completedSteps}/${processSteps.length} etapas</strong></div>
+          </div>
+          ${user.role === "admin" ? `
+          <div class="public-link-box">
+            <div>
+              <strong>Acompanhamento do cliente</strong>
+              <p class="muted">Link privado apenas com o progresso e as etapas desta obra.</p>
+            </div>
+            <div class="public-link-actions">
+              <button type="button" class="create-public-link-btn">${w.public_access_enabled ? "Criar novo link" : "Criar link"}</button>
+              ${w.public_access_enabled ? `<button type="button" class="revoke-public-link-btn">Revogar acesso</button>` : ""}
+            </div>
+          </div>
+          ` : ""}
+          ${w.description ? `<p class="work-description">${escapeHtml(w.description)}</p>` : ""}
           <div class="detail-tabs">
             <button type="button" class="detail-tab-btn active" data-detail-tab="materials">Materiais</button>
             <button type="button" class="detail-tab-btn" data-detail-tab="process">Etapas do Processo</button>
-            <button type="button" class="detail-tab-btn" data-detail-tab="observations">Observacoes</button>
+            <button type="button" class="detail-tab-btn" data-detail-tab="observations">Observações</button>
           </div>
           <div class="detail-panel detail-panel-materials">
             ${user.role === "admin" ? `
@@ -738,9 +768,9 @@ function renderWorks(items, target) {
           </div>
           <div class="detail-panel detail-panel-observations hidden">
             <div class="work-observations-box">
-              <label><strong>Observacoes</strong></label>
-              <textarea class="work-observations-input" placeholder="Escreve aqui observacoes sobre esta obra...">${escapeHtml(w.observations || "")}</textarea>
-              <button type="button" class="save-work-observations-btn">Guardar observacoes</button>
+              <label><strong>Observações</strong></label>
+              <textarea class="work-observations-input" placeholder="Escreve aqui observações sobre esta obra...">${escapeHtml(w.observations || "")}</textarea>
+              <button type="button" class="save-work-observations-btn">Guardar observações</button>
             </div>
           </div>
         </div>
@@ -753,19 +783,24 @@ function renderWorks(items, target) {
 
 function renderClients(items) {
   if (!items.length) {
-    clientsList.innerHTML = "<p class='muted'>Sem clientes.</p>";
+    clientsList.innerHTML = "<div class='empty-state'><strong>Sem clientes</strong><span>Adiciona um cliente para começar.</span></div>";
     return;
   }
   clientsList.innerHTML = items
     .map(
       (c) => `
-      <article class="client-item">
-        <h3>${escapeHtml(c.name)}</h3>
-        <p><strong>NIF:</strong> ${escapeHtml(c.nif || "-")}</p>
-        <p><strong>Morada:</strong> ${escapeHtml(c.address || "-")}</p>
-        <p><strong>Telefone:</strong> ${escapeHtml(c.phone || "-")}</p>
-        <p><strong>Email:</strong> ${escapeHtml(c.email || "-")}</p>
-        <p class="muted">${escapeHtml(c.notes || "")}</p>
+      <article class="client-item client-card">
+        <div class="entity-card-head">
+          <div class="entity-avatar" aria-hidden="true">${escapeHtml(String(c.name || "?").charAt(0).toUpperCase())}</div>
+          <div><h3>${escapeHtml(c.name)}</h3><span class="muted">Cliente</span></div>
+        </div>
+        <dl class="entity-details">
+          <div><dt>NIF</dt><dd>${escapeHtml(c.nif || "—")}</dd></div>
+          <div><dt>Telefone</dt><dd>${escapeHtml(c.phone || "—")}</dd></div>
+          <div><dt>Email</dt><dd>${escapeHtml(c.email || "—")}</dd></div>
+          <div class="entity-detail-wide"><dt>Morada</dt><dd>${escapeHtml(c.address || "—")}</dd></div>
+        </dl>
+        ${c.notes ? `<p class="entity-note">${escapeHtml(c.notes)}</p>` : ""}
       </article>
     `
     )
@@ -775,7 +810,7 @@ function renderClients(items) {
 function renderUsers(items) {
   if (!usersList) return;
   if (!items.length) {
-    usersList.innerHTML = "<p class='muted'>Sem utilizadores.</p>";
+    usersList.innerHTML = "<div class='empty-state'><strong>Sem utilizadores</strong><span>Cria um utilizador para permitir o acesso.</span></div>";
     return;
   }
 
@@ -784,10 +819,12 @@ function renderUsers(items) {
       const canDelete = Number(u.id) !== Number(user.id);
       return `
       <article class="user-item">
-        <div>
+        <div class="entity-card-head">
+          <div class="entity-avatar" aria-hidden="true">${escapeHtml(String(u.username || "?").charAt(0).toUpperCase())}</div>
+          <div>
           <h3>${escapeHtml(u.username || "-")}</h3>
-          <p><strong>Password:</strong> ${escapeHtml(u.password_preview || "********")}</p>
-          <p class="muted"><strong>Role:</strong> ${escapeHtml(u.role || "-")}</p>
+          <p class="muted user-role">${escapeHtml(u.role || "-")}</p>
+          </div>
         </div>
         <button
           type="button"
@@ -810,20 +847,21 @@ function renderUsers(items) {
 function renderLogs(items) {
   if (!logsList) return;
   if (!items.length) {
-    logsList.innerHTML = "<p class='muted'>Sem logs.</p>";
+    logsList.innerHTML = "<div class='empty-state'><strong>Sem atividade</strong><span>As ações realizadas na aplicação aparecerão aqui.</span></div>";
     return;
   }
 
   logsList.innerHTML = items
     .map(
       (item) => `
-      <article class="client-item">
-        <h3>${escapeHtml(formatLogAction(item.action_type))}</h3>
-        <p><strong>Utilizador:</strong> ${escapeHtml(item.username || "-")} (${escapeHtml(item.user_role || "-")})</p>
-        <p><strong>Entidade:</strong> ${escapeHtml(formatLogEntity(item.entity_type))} ${escapeHtml(item.entity_id || "-")}</p>
-        <p><strong>Obra:</strong> ${escapeHtml(item.work_title || "Sem obra associada")} ${item.work_id ? `(ID: ${escapeHtml(item.work_id)})` : ""}</p>
-        <p><strong>Data:</strong> ${escapeHtml(formatLogDate(item.created_at))}</p>
-        <p class="muted">${escapeHtml(formatLogDetails(item.details) || "-")}</p>
+      <article class="log-item">
+        <div class="log-marker" aria-hidden="true"></div>
+        <div class="log-content">
+          <div class="log-head"><h3>${escapeHtml(formatLogAction(item.action_type))}</h3><time>${escapeHtml(formatLogDate(item.created_at))}</time></div>
+          <p><strong>${escapeHtml(item.username || "Sistema")}</strong> · ${escapeHtml(item.user_role || "-")}</p>
+          <p>${escapeHtml(formatLogEntity(item.entity_type))} · ${escapeHtml(item.work_title || "Sem obra associada")}</p>
+          ${formatLogDetails(item.details) ? `<p class="log-details">${escapeHtml(formatLogDetails(item.details))}</p>` : ""}
+        </div>
       </article>
     `
     )
@@ -1383,6 +1421,42 @@ async function handleWorksInteraction(event) {
   if (!button) return;
 
   const workItem = button.closest(".work-item");
+  if (button.classList.contains("create-public-link-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    button.disabled = true;
+    try {
+      const result = await api(`/api/works/${workId}/public-link`, { method: "POST" });
+      try {
+        await navigator.clipboard.writeText(result.link);
+        window.alert("Link criado e copiado. Envia-o ao cliente.");
+      } catch (_error) {
+        window.prompt("Copia este link e envia-o ao cliente:", result.link);
+      }
+      await refreshWorksView({ workId });
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("revoke-public-link-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    if (!window.confirm("Revogar o acesso do cliente a esta obra?")) return;
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/public-link`, { method: "DELETE" });
+      await refreshWorksView({ workId });
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error.message);
+    }
+    return;
+  }
+
   if (button.classList.contains("add-material-btn")) {
     if (!workItem) return;
     const workId = workItem.dataset.workId;
@@ -1625,27 +1699,6 @@ async function handleMaterialCheckboxChange(event) {
   const isArrivedToggle = changedInput.classList.contains("material-arrived");
   const ordered = isOrderedToggle ? !orderedInput.classList.contains("done") : orderedInput.classList.contains("done");
   const arrived = isArrivedToggle ? !arrivedInput.classList.contains("done") : arrivedInput.classList.contains("done");
-  const orderNoteLinksText = String(materialItem.querySelector(".material-order-note-links")?.textContent || "").trim();
-  const hasOrderNotePdf = orderNoteLinksText && !orderNoteLinksText.includes("Sem nota em PDF");
-  const invoiceLinksText = String(materialItem.querySelector(".material-invoice-links")?.textContent || "").trim();
-  const hasInvoicePhoto = invoiceLinksText && !invoiceLinksText.includes("Sem foto da fatura");
-  if (isOrderedToggle && ordered && !hasOrderNotePdf) {
-    const orderNoteInput = materialItem.querySelector(".material-order-note-file");
-    if (!orderNoteInput || !materialId) return;
-    pendingMaterialOrder = { workId, materialId };
-    orderNoteInput.value = "";
-    orderNoteInput.click();
-    return;
-  }
-  if (isArrivedToggle && arrived && !hasInvoicePhoto) {
-    const invoiceInput = materialItem.querySelector(".material-invoice-file");
-    if (!invoiceInput || !materialId) return;
-    pendingMaterialReceipt = { workId, materialId };
-    invoiceInput.value = "";
-    invoiceInput.click();
-    return;
-  }
-
   orderedInput.disabled = true;
   arrivedInput.disabled = true;
   try {

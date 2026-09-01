@@ -1,6 +1,7 @@
 require("dotenv").config();
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
@@ -9,6 +10,7 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const multer = require("multer");
 const { query, initDb } = require("./db");
+const { uploadFile, getFileUrl } = require("./storage");
 const { requireAuth } = require("./middleware/auth");
 
 const app = express();
@@ -115,13 +117,7 @@ app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use("/uploads", express.static(uploadsDir));
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadsDir),
-    filename: (req, _file, cb) => {
-      const uploadKey = String(req.params.materialKey || req.params.stepKey || "").replace(/[^a-z_]/g, "");
-      cb(null, `${req.params.id}-${uploadKey}-${Date.now()}.pdf`);
-    }
-  }),
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     const original = String(file.originalname || "").toLowerCase();
     const looksLikePdf = original.endsWith(".pdf");
@@ -134,15 +130,7 @@ const upload = multer({
 });
 
 const imageUpload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, uploadsDir),
-    filename: (req, file, cb) => {
-      const rawExt = path.extname(String(file.originalname || "")).toLowerCase();
-      const safeExt = [".jpg", ".jpeg", ".png", ".webp", ".heic"].includes(rawExt) ? rawExt : ".jpg";
-      const uploadKey = String(req.params.materialId || req.params.id || "material").replace(/[^a-zA-Z0-9_-]/g, "");
-      cb(null, `${req.params.id}-${uploadKey}-${Date.now()}${safeExt}`);
-    }
-  }),
+  storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     if (!String(file.mimetype || "").startsWith("image/")) {
       return cb(new Error("Apenas imagens sao permitidas."));
@@ -196,7 +184,7 @@ async function isWorkReadyForInProgress(workId) {
 }
 
 async function loadSchemaInfo() {
-  const columns = await query("SHOW COLUMNS FROM obras");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
   const names = new Set(columns.map((column) => String(column.Field)));
   const dueDateCandidates = ["data_fim_prevista", "data_fim_previsao", "data_fim", "prazo"];
   schemaInfo.obrasDueDateColumn = dueDateCandidates.find((name) => names.has(name)) || null;
@@ -207,7 +195,7 @@ async function loadSchemaInfo() {
   const processConfiguredCandidates = ["process_steps_configured", "etapas_configuradas"];
   schemaInfo.obrasProcessConfiguredColumn = processConfiguredCandidates.find((name) => names.has(name)) || null;
 
-  const clientColumns = await query("SHOW COLUMNS FROM clientes");
+  const clientColumns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'clientes'");
   const clientNames = new Set(clientColumns.map((column) => String(column.Field)));
   const nifCandidates = ["nif", "numero_contribuinte"];
   schemaInfo.clientesNifColumn = nifCandidates.find((name) => clientNames.has(name)) || null;
@@ -216,7 +204,7 @@ async function loadSchemaInfo() {
 }
 
 async function ensureWorksPriorityColumn() {
-  const columns = await query("SHOW COLUMNS FROM obras");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
   const hasPriority = columns.some((column) => String(column.Field) === "prioridade");
   if (!hasPriority) {
     await query("ALTER TABLE obras ADD COLUMN prioridade VARCHAR(20) NOT NULL DEFAULT 'medium'");
@@ -224,7 +212,7 @@ async function ensureWorksPriorityColumn() {
 }
 
 async function ensureWorksObservationsColumn() {
-  const columns = await query("SHOW COLUMNS FROM obras");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
   const hasObservations = columns.some((column) => String(column.Field) === "observacoes");
   if (!hasObservations) {
     await query("ALTER TABLE obras ADD COLUMN observacoes TEXT NULL");
@@ -232,7 +220,7 @@ async function ensureWorksObservationsColumn() {
 }
 
 async function ensureClientsNifColumn() {
-  const columns = await query("SHOW COLUMNS FROM clientes");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'clientes'");
   const hasNif = columns.some((column) => String(column.Field) === "nif");
   if (!hasNif) {
     await query("ALTER TABLE clientes ADD COLUMN nif VARCHAR(20) NULL");
@@ -240,7 +228,7 @@ async function ensureClientsNifColumn() {
 }
 
 async function ensureClientsAddressColumn() {
-  const columns = await query("SHOW COLUMNS FROM clientes");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'clientes'");
   const hasAddress = columns.some((column) => String(column.Field) === "morada");
   if (!hasAddress) {
     await query("ALTER TABLE clientes ADD COLUMN morada VARCHAR(255) NULL");
@@ -248,16 +236,52 @@ async function ensureClientsAddressColumn() {
 }
 
 async function ensureWorksProcessConfiguredColumn() {
-  const columns = await query("SHOW COLUMNS FROM obras");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
   const hasColumn = columns.some((column) => String(column.Field) === "process_steps_configured");
   if (!hasColumn) {
-    await query("ALTER TABLE obras ADD COLUMN process_steps_configured TINYINT(1) NOT NULL DEFAULT 0");
+    await query("ALTER TABLE obras ADD COLUMN process_steps_configured BOOLEAN NOT NULL DEFAULT FALSE");
   }
 }
 
+async function ensureWorksPublicAccessColumns() {
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
+  const names = new Set(columns.map((column) => String(column.Field)));
+  if (!names.has("public_access_token_hash")) {
+    await query("ALTER TABLE obras ADD COLUMN public_access_token_hash VARCHAR(64) NULL");
+  }
+  if (!names.has("public_access_created_at")) {
+    await query("ALTER TABLE obras ADD COLUMN public_access_created_at TIMESTAMPTZ NULL");
+  }
+  await query("CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_public_access_token_hash ON obras(public_access_token_hash) WHERE public_access_token_hash IS NOT NULL");
+}
+
+function hashPublicAccessToken(token) {
+  return crypto.createHash("sha256").update(String(token)).digest("hex");
+}
+
 async function getNextTableId(tableName) {
-  const rows = await query(`SELECT COALESCE(MAX(id), 0) + 1 AS nextId FROM ${tableName}`);
+  const rows = await query(`SELECT COALESCE(MAX(id), 0) + 1 AS "nextId" FROM ${tableName}`);
   return Number(rows[0]?.nextId || 1);
+}
+
+async function ensureInitialAdmin() {
+  const username = String(process.env.INITIAL_ADMIN_USERNAME || "").trim();
+  const password = String(process.env.INITIAL_ADMIN_PASSWORD || "");
+  if (!username && !password) return;
+  if (!username || password.length < 6) {
+    throw new Error("INITIAL_ADMIN_USERNAME e INITIAL_ADMIN_PASSWORD (minimo 6 caracteres) sao obrigatorios em conjunto.");
+  }
+
+  const existingUsers = await query("SELECT id FROM funcionarios LIMIT 1");
+  if (existingUsers.length) return;
+
+  const id = await getNextTableId("funcionarios");
+  await query(
+    "INSERT INTO funcionarios (id, nome, username, password, role) VALUES (?, ?, ?, ?, 'admin')",
+    [id, username, username, bcrypt.hashSync(password, 12)]
+  );
+  // eslint-disable-next-line no-console
+  console.log(`Utilizador administrador inicial criado: ${username}`);
 }
 
 async function getOrderedMaterials(workId) {
@@ -284,14 +308,14 @@ async function ensureDefaultMaterialsForWork(workId) {
     if (existingNames.has(material.label)) continue;
     const nextId = await getNextTableId("materiais");
     await query(
-      "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, 0, 0)",
+      "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, FALSE, FALSE)",
       [nextId, workId, material.label]
     );
   }
 }
 
 async function ensureMaterialsExtraColumns() {
-  const columns = await query("SHOW COLUMNS FROM materiais");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'materiais'");
   const hasOrderNote = columns.some((column) => String(column.Field) === "nota_encomenda");
   if (!hasOrderNote) {
     await query("ALTER TABLE materiais ADD COLUMN nota_encomenda TEXT NULL");
@@ -314,7 +338,7 @@ async function ensureMaterialsExtraColumns() {
   }
   const hasOrderedAt = columns.some((column) => String(column.Field) === "ordered_at");
   if (!hasOrderedAt) {
-    await query("ALTER TABLE materiais ADD COLUMN ordered_at DATETIME NULL");
+    await query("ALTER TABLE materiais ADD COLUMN ordered_at TIMESTAMPTZ NULL");
   }
   const hasArrivedByUserId = columns.some((column) => String(column.Field) === "arrived_by_user_id");
   if (!hasArrivedByUserId) {
@@ -326,7 +350,7 @@ async function ensureMaterialsExtraColumns() {
   }
   const hasArrivedAt = columns.some((column) => String(column.Field) === "arrived_at");
   if (!hasArrivedAt) {
-    await query("ALTER TABLE materiais ADD COLUMN arrived_at DATETIME NULL");
+    await query("ALTER TABLE materiais ADD COLUMN arrived_at TIMESTAMPTZ NULL");
   }
 }
 
@@ -340,18 +364,18 @@ async function initializeMaterialsForExistingWorks() {
 async function ensureProcessStepsTable() {
   await query(`
     CREATE TABLE IF NOT EXISTS obra_etapas (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      id_obra INT NOT NULL,
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      id_obra BIGINT NOT NULL REFERENCES obras(id) ON DELETE CASCADE,
       nome_etapa VARCHAR(120) NOT NULL,
       pdf_path VARCHAR(255) NULL,
-      concluida TINYINT(1) NOT NULL DEFAULT 0,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-      UNIQUE KEY uq_obra_etapa (id_obra, nome_etapa),
-      INDEX idx_obra_etapas_obra (id_obra)
+      concluida BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (id_obra, nome_etapa)
     )
   `);
-  const columns = await query("SHOW COLUMNS FROM obra_etapas");
+  await query("CREATE INDEX IF NOT EXISTS idx_obra_etapas_obra ON obra_etapas(id_obra)");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obra_etapas'");
   const hasPdfPath = columns.some((column) => String(column.Field) === "pdf_path");
   if (!hasPdfPath) {
     await query("ALTER TABLE obra_etapas ADD COLUMN pdf_path VARCHAR(255) NULL");
@@ -370,7 +394,7 @@ async function ensureProcessStepsTable() {
   }
   const hasCheckedAt = columns.some((column) => String(column.Field) === "checked_at");
   if (!hasCheckedAt) {
-    await query("ALTER TABLE obra_etapas ADD COLUMN checked_at DATETIME NULL");
+    await query("ALTER TABLE obra_etapas ADD COLUMN checked_at TIMESTAMPTZ NULL");
   }
 }
 
@@ -418,12 +442,12 @@ async function ensureDefaultProcessStepsForWork(workId) {
   for (const step of nextRows) {
     const nextId = await getNextTableId("obra_etapas");
     await query(
-      "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, 0, ?)",
+      "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, FALSE, ?)",
       [nextId, workId, step.label, step.orderIndex]
     );
   }
 
-  await query("UPDATE obras SET process_steps_configured = 1 WHERE id = ?", [workId]);
+  await query("UPDATE obras SET process_steps_configured = TRUE WHERE id = ?", [workId]);
   await normalizeProcessStepOrder(workId);
 }
 
@@ -434,7 +458,14 @@ async function initializeProcessStepsForExistingWorks() {
 
   for (const work of works) {
     if (Number(Boolean(work.process_steps_configured)) === 1) {
-      await normalizeProcessStepOrder(work.id);
+      const existingSteps = await getOrderedProcessSteps(work.id);
+      // Recupera obras que ficaram marcadas como configuradas antes de as
+      // etapas serem gravadas (por exemplo, após uma falha a meio da criação).
+      if (!existingSteps.length) {
+        await ensureDefaultProcessStepsForWork(work.id);
+      } else {
+        await normalizeProcessStepOrder(work.id);
+      }
       continue;
     }
     await ensureDefaultProcessStepsForWork(work.id);
@@ -472,21 +503,21 @@ async function recalculateWorkStatusFromProcessSteps(workId) {
 async function ensureAuditLogsTable() {
   await query(`
     CREATE TABLE IF NOT EXISTS audit_logs (
-      id INT AUTO_INCREMENT PRIMARY KEY,
-      user_id INT NULL,
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      user_id BIGINT NULL,
       username VARCHAR(120) NULL,
       user_role VARCHAR(50) NULL,
       action_type VARCHAR(120) NOT NULL,
       entity_type VARCHAR(120) NOT NULL,
-      entity_id INT NULL,
-      work_id INT NULL,
+      entity_id BIGINT NULL,
+      work_id BIGINT NULL,
       details TEXT NULL,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-      INDEX idx_audit_logs_created_at (created_at),
-      INDEX idx_audit_logs_work_id (work_id)
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  const columns = await query("SHOW COLUMNS FROM audit_logs");
+  await query("CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)");
+  await query("CREATE INDEX IF NOT EXISTS idx_audit_logs_work_id ON audit_logs(work_id)");
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'audit_logs'");
   const names = new Set(columns.map((column) => String(column.Field)));
   if (!names.has("user_id")) {
     await query("ALTER TABLE audit_logs ADD COLUMN user_id INT NULL");
@@ -642,6 +673,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       ${dueDateSelect},
       ${prioritySelect},
       ${observationsSelect},
+      (o.public_access_token_hash IS NOT NULL) AS public_access_enabled,
       c.id AS client_id,
       c.nome AS client_name,
       e.nome AS estado_nome
@@ -726,12 +758,20 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     stepsGrouped.get(step.id_obra).push(step);
   }
 
-  return obras.map((obra) => {
+  const signedUrlCache = new Map();
+  const resolveFileUrl = async (storedPath) => {
+    if (!storedPath) return null;
+    if (!signedUrlCache.has(storedPath)) signedUrlCache.set(storedPath, getFileUrl(storedPath));
+    return signedUrlCache.get(storedPath);
+  };
+
+  return Promise.all(obras.map(async (obra) => {
     const item = {
       id: obra.id,
       title: obra.nome_obra,
       description: obra.descricao || "",
       observations: obra.observacoes || "",
+      public_access_enabled: Boolean(obra.public_access_enabled),
       status: mapStatusNameToCode(obra.estado_nome),
       due_date: obra.data_fim_prevista || null,
       priority: normalizePriority(obra.prioridade),
@@ -745,50 +785,50 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     }
     for (const [key, materialName] of Object.entries(materialMap)) {
       const material = byName.get(materialName);
-      item[`${key}_pdf_path`] = material?.pdf_path || null;
+      item[`${key}_pdf_path`] = await resolveFileUrl(material?.pdf_path);
       item[`${key}_ordered`] = Number(Boolean(material?.encomendado));
       item[`${key}_arrived`] = Number(Boolean(material?.chegou));
     }
-    item.materials = workMaterials.map((material) => ({
+    item.materials = await Promise.all(workMaterials.map(async (material) => ({
       id: material.id,
       key: getMaterialKeyByName(material.nome_material),
       label: material.nome_material,
-      pdf_path: material.pdf_path || null,
+      pdf_path: await resolveFileUrl(material.pdf_path),
       ordered: Number(Boolean(material.encomendado)),
       arrived: Number(Boolean(material.chegou)),
       order_note: material.nota_encomenda || "",
-      invoice_photo_path: material.invoice_photo_path || null,
-      order_note_pdf_path: material.note_encomenda_pdf_path || null,
+      invoice_photo_path: await resolveFileUrl(material.invoice_photo_path),
+      order_note_pdf_path: await resolveFileUrl(material.note_encomenda_pdf_path),
       ordered_by_username: material.ordered_by_username || null,
       ordered_at: material.ordered_at || null,
       arrived_by_username: material.arrived_by_username || null,
       arrived_at: material.arrived_at || null
-    }));
+    })));
     const workSteps = stepsGrouped.get(obra.id) || [];
     const stepByName = new Map(workSteps.map((step) => [step.nome_etapa, step]));
     for (const [key, stepName] of Object.entries(processStepMap)) {
       const step = stepByName.get(stepName);
       item[`${key}_done`] = Number(Boolean(step?.concluida));
-      item[`${key}_pdf_path`] = step?.pdf_path || null;
+      item[`${key}_pdf_path`] = await resolveFileUrl(step?.pdf_path);
     }
     item.kitchen_design_done = Number(Boolean(stepByName.get(processStepMap.kitchen_design)?.concluida));
-    item.process_steps = workSteps.map((step) => {
+    item.process_steps = await Promise.all(workSteps.map(async (step) => {
       const key = getProcessStepKeyByName(step.nome_etapa);
       return {
         id: step.id,
         key,
         label: step.nome_etapa,
         done: Number(Boolean(step.concluida)),
-        pdf_path: step.pdf_path || null,
+        pdf_path: await resolveFileUrl(step.pdf_path),
         order_index: Number(step.order_index) || 0,
         can_upload_pdf: key === "kitchen_design",
         checked_by_user_id: step.checked_by_user_id || null,
         checked_by_username: step.checked_by_username || null,
         checked_at: step.checked_at || null
       };
-    });
+    }));
     return item;
-  });
+  }));
 }
 
 app.post("/api/auth/login", authLimiter, async (req, res) => {
@@ -832,6 +872,73 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
 });
 
 app.get("/api/auth/me", requireAuth, (req, res) => res.json({ user: req.user }));
+
+app.get("/api/public/works/:token", async (req, res) => {
+  try {
+    const token = String(req.params.token || "");
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+      return res.status(404).json({ error: "Link invalido ou expirado." });
+    }
+    const rows = await query(
+      `SELECT o.id, o.nome_obra, o.data_fim_prevista, e.nome AS estado_nome
+       FROM obras o
+       INNER JOIN estados e ON e.id = o.id_estado
+       WHERE o.public_access_token_hash = ?
+       LIMIT 1`,
+      [hashPublicAccessToken(token)]
+    );
+    const work = rows[0];
+    if (!work) return res.status(404).json({ error: "Link invalido ou expirado." });
+
+    const steps = await query(
+      `SELECT nome_etapa, concluida, order_index
+       FROM obra_etapas
+       WHERE id_obra = ?
+       ORDER BY order_index ASC, id ASC`,
+      [work.id]
+    );
+    const completed = steps.filter((step) => Boolean(step.concluida)).length;
+    return res.json({
+      title: work.nome_obra,
+      status: mapStatusNameToCode(work.estado_nome),
+      due_date: work.data_fim_prevista || null,
+      completed_steps: completed,
+      total_steps: steps.length,
+      steps: steps.map((step) => ({ label: step.nome_etapa, done: Boolean(step.concluida) }))
+    });
+  } catch (_error) {
+    return res.status(500).json({ error: "Erro ao carregar acompanhamento." });
+  }
+});
+
+app.post("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    const existing = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [id]);
+    if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+    const token = crypto.randomBytes(32).toString("hex");
+    await query("UPDATE obras SET public_access_token_hash = ?, public_access_created_at = NOW() WHERE id = ?", [hashPublicAccessToken(token), id]);
+    const link = `${req.protocol}://${req.get("host")}/acompanhar.html#${token}`;
+    await createAuditLog(req, "create_public_link", "work", id, id);
+    return res.json({ link });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao criar link." });
+  }
+});
+
+app.delete("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    const result = await query("UPDATE obras SET public_access_token_hash = NULL, public_access_created_at = NULL WHERE id = ?", [id]);
+    if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
+    await createAuditLog(req, "revoke_public_link", "work", id, id);
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao revogar link." });
+  }
+});
 
 app.get("/api/works", requireAuth, async (req, res) => {
   try {
@@ -905,7 +1012,7 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     const nextWorkId = await getNextTableId("obras");
     const baseColumns = ["id", "nome_obra", "descricao", "id_cliente", "id_estado", "process_steps_configured"];
     const baseValues = [nextWorkId, String(title).trim(), description ? String(description).trim() : null, parsedClientId, estadoId];
-    baseValues.push(1);
+    baseValues.push(true);
     if (schemaInfo.obrasPriorityColumn) {
       baseColumns.push(schemaInfo.obrasPriorityColumn);
       baseValues.push(priorityValue);
@@ -923,7 +1030,7 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     for (const [index, step] of defaultProcessSteps.entries()) {
       const nextStepId = await getNextTableId("obra_etapas");
       await query(
-        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, 0, ?)",
+        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, FALSE, ?)",
         [nextStepId, nextWorkId, step.label, index]
       );
     }
@@ -980,8 +1087,8 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
     if (!materialKeys.has(materialKey)) return res.status(400).json({ error: "Material invalido." });
 
-    const ordered = req.body?.ordered === true || req.body?.ordered === "true" ? 1 : 0;
-    const arrived = req.body?.arrived === true || req.body?.arrived === "true" ? 1 : 0;
+    const ordered = req.body?.ordered === true || req.body?.ordered === "true";
+    const arrived = req.body?.arrived === true || req.body?.arrived === "true";
     const materialName = materialMap[materialKey];
 
     const existing = await query(
@@ -993,14 +1100,14 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
       await query(
         `UPDATE materiais
          SET encomendado = ?, chegou = ?,
-             ordered_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-             ordered_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-             ordered_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
-             arrived_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-             arrived_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-             arrived_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
-             data_encomenda = IF(? = 1 AND data_encomenda IS NULL, CURDATE(), data_encomenda),
-             data_chegada = IF(? = 1 AND data_chegada IS NULL, CURDATE(), data_chegada)
+             ordered_by_user_id = CASE WHEN ? = TRUE THEN ?::BIGINT ELSE NULL END,
+             ordered_by_username = CASE WHEN ? = TRUE THEN ? ELSE NULL END,
+             ordered_at = CASE WHEN ? = TRUE THEN NOW() ELSE NULL END,
+             arrived_by_user_id = CASE WHEN ? = TRUE THEN ?::BIGINT ELSE NULL END,
+             arrived_by_username = CASE WHEN ? = TRUE THEN ? ELSE NULL END,
+             arrived_at = CASE WHEN ? = TRUE THEN NOW() ELSE NULL END,
+             data_encomenda = CASE WHEN ? = TRUE AND data_encomenda IS NULL THEN CURRENT_DATE ELSE data_encomenda END,
+             data_chegada = CASE WHEN ? = TRUE AND data_chegada IS NULL THEN CURRENT_DATE ELSE data_chegada END
          WHERE id = ?`,
         [
           ordered,
@@ -1020,7 +1127,7 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
       const nextMaterialId = await getNextTableId("materiais");
       await query(
         `INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou, data_encomenda, data_chegada)
-         VALUES (?, ?, ?, ?, ?, IF(? = 1, CURDATE(), NULL), IF(? = 1, CURDATE(), NULL))`,
+         VALUES (?, ?, ?, ?, ?, CASE WHEN ? = TRUE THEN CURRENT_DATE ELSE NULL END, CASE WHEN ? = TRUE THEN CURRENT_DATE ELSE NULL END)`,
         [nextMaterialId, id, materialName, ordered, arrived, ordered, arrived]
       );
       existing[0] = { id: nextMaterialId };
@@ -1057,7 +1164,7 @@ app.post("/api/works/:id/materials", requireAuth, requireAdmin, async (req, res)
 
     const nextMaterialId = await getNextTableId("materiais");
     await query(
-      "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, 0, 0)",
+      "INSERT INTO materiais (id, id_obra, nome_material, encomendado, chegou) VALUES (?, ?, ?, FALSE, FALSE)",
       [nextMaterialId, id, label]
     );
 
@@ -1077,31 +1184,24 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
     if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
 
-    const ordered = req.body?.ordered === true || req.body?.ordered === "true" ? 1 : 0;
-    const arrived = req.body?.arrived === true || req.body?.arrived === "true" ? 1 : 0;
+    const ordered = req.body?.ordered === true || req.body?.ordered === "true";
+    const arrived = req.body?.arrived === true || req.body?.arrived === "true";
     const existing = await query(
       "SELECT id, nome_material, invoice_photo_path, note_encomenda_pdf_path FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
       [materialId, id]
     );
     if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
-    if (ordered === 1 && !existing[0].note_encomenda_pdf_path) {
-      return res.status(400).json({ error: "Para marcar como encomendado tens de anexar o PDF da nota de encomenda." });
-    }
-    if (arrived === 1 && !existing[0].invoice_photo_path) {
-      return res.status(400).json({ error: "Para marcar como recebido tens de anexar uma foto da fatura." });
-    }
-
     await query(
       `UPDATE materiais
        SET encomendado = ?, chegou = ?,
-           ordered_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-           ordered_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-           ordered_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
-           arrived_by_user_id = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-           arrived_by_username = CASE WHEN ? = 1 THEN ? ELSE NULL END,
-           arrived_at = CASE WHEN ? = 1 THEN NOW() ELSE NULL END,
-           data_encomenda = IF(? = 1 AND data_encomenda IS NULL, CURDATE(), data_encomenda),
-           data_chegada = IF(? = 1 AND data_chegada IS NULL, CURDATE(), data_chegada)
+           ordered_by_user_id = CASE WHEN ? = TRUE THEN ?::BIGINT ELSE NULL END,
+           ordered_by_username = CASE WHEN ? = TRUE THEN ? ELSE NULL END,
+           ordered_at = CASE WHEN ? = TRUE THEN NOW() ELSE NULL END,
+           arrived_by_user_id = CASE WHEN ? = TRUE THEN ?::BIGINT ELSE NULL END,
+           arrived_by_username = CASE WHEN ? = TRUE THEN ? ELSE NULL END,
+           arrived_at = CASE WHEN ? = TRUE THEN NOW() ELSE NULL END,
+           data_encomenda = CASE WHEN ? = TRUE AND data_encomenda IS NULL THEN CURRENT_DATE ELSE data_encomenda END,
+           data_chegada = CASE WHEN ? = TRUE AND data_chegada IS NULL THEN CURRENT_DATE ELSE data_chegada END
        WHERE id = ? AND id_obra = ?`,
       [
         ordered,
@@ -1149,7 +1249,7 @@ app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth
       );
       if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
 
-      const publicPath = `/uploads/${req.file.filename}`;
+      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}/order-notes`, ".pdf");
       await query(
         "UPDATE materiais SET note_encomenda_pdf_path = ? WHERE id = ? AND id_obra = ?",
         [publicPath, materialId, id]
@@ -1198,14 +1298,14 @@ async function updateProcessStepDone(req, workId, stepId, done) {
     throw new Error("Etapa nao encontrada.");
   }
 
-  if (done === 1 && stepIndex > 0) {
+  if (done && stepIndex > 0) {
     const previousDone = Number(Boolean(steps[stepIndex - 1].concluida));
     if (!previousDone) {
       throw new Error("Conclui a etapa anterior antes de avancar.");
     }
   }
 
-  if (done === 0) {
+  if (!done) {
     for (let index = stepIndex + 1; index < steps.length; index += 1) {
       if (Number(Boolean(steps[index].concluida)) === 1) {
         throw new Error("Nao podes desmarcar esta etapa enquanto existirem etapas seguintes concluidas.");
@@ -1213,9 +1313,9 @@ async function updateProcessStepDone(req, workId, stepId, done) {
     }
   }
 
-  if (done === 1) {
+  if (done) {
     await query(
-      "UPDATE obra_etapas SET concluida = ?, checked_by_user_id = ?, checked_by_username = ?, checked_at = NOW() WHERE id = ? AND id_obra = ?",
+      "UPDATE obra_etapas SET concluida = ?, checked_by_user_id = ?::BIGINT, checked_by_username = ?, checked_at = NOW() WHERE id = ? AND id_obra = ?",
       [done, req.user?.id || null, req.user?.username || null, stepId, workId]
     );
   } else {
@@ -1247,7 +1347,7 @@ app.post("/api/works/:id/process", requireAuth, requireAdmin, async (req, res) =
     const nextOrderIndex = rows.length;
     const nextStepId = await getNextTableId("obra_etapas");
     await query(
-      "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, 0, ?)",
+      "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, FALSE, ?)",
       [nextStepId, id, label, nextOrderIndex]
     );
     await recalculateWorkStatusFromProcessSteps(id);
@@ -1326,7 +1426,7 @@ app.patch("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) =
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
     if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa invalida." });
 
-    const done = req.body?.done === true || req.body?.done === "true" ? 1 : 0;
+    const done = req.body?.done === true || req.body?.done === "true";
     const existing = await query(
       "SELECT id, nome_etapa FROM obra_etapas WHERE id = ? AND id_obra = ? LIMIT 1",
       [stepId, id]
@@ -1365,7 +1465,7 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
     );
     if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
 
-    const done = req.body?.done === true || req.body?.done === "true" ? 1 : 0;
+    const done = req.body?.done === true || req.body?.done === "true";
     await updateProcessStepDone(req, id, existing[0].id, done);
     const works = await getWorks(null);
     const work = works.find((item) => item.id === id);
@@ -1394,7 +1494,7 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
 
     try {
       const stepName = processStepMap[stepKey];
-      const publicPath = `/uploads/${req.file.filename}`;
+      const publicPath = await uploadFile(req.file, `works/${id}/process/${stepKey}`, ".pdf");
       const existing = await query(
         "SELECT id FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
         [id, stepName]
@@ -1406,7 +1506,7 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
         const nextProcessStepId = await getNextTableId("obra_etapas");
         const orderedSteps = await getOrderedProcessSteps(id);
         await query(
-          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path, order_index) VALUES (?, ?, ?, 0, ?, ?)",
+          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path, order_index) VALUES (?, ?, ?, FALSE, ?, ?)",
           [nextProcessStepId, id, stepName, publicPath, orderedSteps.length]
         );
         existing[0] = { id: nextProcessStepId };
@@ -1437,7 +1537,7 @@ app.post("/api/works/:id/materials/:materialKey/upload", requireAuth, async (req
 
     try {
       const materialName = materialMap[materialKey];
-      const publicPath = `/uploads/${req.file.filename}`;
+      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialKey}`, ".pdf");
       const existing = await query(
         "SELECT id FROM materiais WHERE id_obra = ? AND nome_material = ? ORDER BY id DESC LIMIT 1",
         [id, materialName]
@@ -1484,7 +1584,7 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
       );
       if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
 
-      const publicPath = `/uploads/${req.file.filename}`;
+      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}`, ".pdf");
       await query("UPDATE materiais SET pdf_path = ? WHERE id = ? AND id_obra = ?", [publicPath, materialId, id]);
 
       const rows = await getWorks(null);
@@ -1517,7 +1617,7 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
       );
       if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
 
-      const publicPath = `/uploads/${req.file.filename}`;
+      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}/invoices`);
       await query(
         "UPDATE materiais SET invoice_photo_path = ? WHERE id = ? AND id_obra = ?",
         [publicPath, materialId, id]
@@ -1742,14 +1842,14 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));
 
 function validateRuntimeConfig() {
-  const dbPort = Number(process.env.DB_PORT || 3306);
+  const dbPort = Number(process.env.DB_PORT || 5432);
   if (!Number.isInteger(normalizedPort) || normalizedPort <= 0 || normalizedPort > 65535) {
     throw new Error(`PORT invalido: ${port}. Usa um porto entre 1 e 65535.`);
   }
   if (normalizedPort === dbPort) {
     throw new Error(
       `PORT (${normalizedPort}) nao pode ser igual ao DB_PORT (${dbPort}). ` +
-      "Define PORT=3000 para a app e mantém DB_PORT=3306 para o MySQL."
+      "Define PORT=3000 para a app e usa a porta PostgreSQL indicada pelo Supabase."
     );
   }
 }
@@ -1765,6 +1865,7 @@ async function start() {
     validateRuntimeConfig();
 
     await initDb();
+    await ensureInitialAdmin();
     await ensureProcessStepsTable();
     await ensureAuditLogsTable();
     await ensureWorksPriorityColumn();
@@ -1772,6 +1873,7 @@ async function start() {
     await ensureClientsNifColumn();
     await ensureClientsAddressColumn();
     await ensureWorksProcessConfiguredColumn();
+    await ensureWorksPublicAccessColumns();
     await ensureMaterialsExtraColumns();
     await initializeMaterialsForExistingWorks();
     await initializeProcessStepsForExistingWorks();
@@ -1792,7 +1894,7 @@ async function start() {
     });
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error("Falha ao ligar ao MySQL:", error.message);
+    console.error("Falha ao ligar ao PostgreSQL/Supabase:", error.message);
     process.exit(1);
   }
 }

@@ -8,12 +8,12 @@
   </head>
   <body>
     <main class="container">
-      <section class="card">
+      <section class="card app-shell">
         <div class="topbar">
           <div class="topbar-brand">
             <img class="topbar-logo" src="images.png" alt="Logotipo SW" />
             <div>
-            <h1 style="margin: 0">Silwood</h1>
+            <h1>Silwood</h1>
             <p class="muted" id="welcome-line"></p>
             </div>
           </div>
@@ -34,7 +34,7 @@
           <div class="work-filters">
             <div class="status-filter-group">
               <button type="button" class="status-filter-btn" data-status="pending">Pendentes/Encomenda</button>
-              <button type="button" class="status-filter-btn active" data-status="in_progress">Produçao</button>
+              <button type="button" class="status-filter-btn active" data-status="in_progress">Produção</button>
               <button type="button" class="status-filter-btn" data-status="done">Finalizado</button>
             </div>
             <div class="client-filter-group">
@@ -53,7 +53,7 @@
 
         <section id="tab-clients" class="hidden">
           <h2>Clientes</h2>
-          <div class="client-filter-group" style="margin-bottom: 12px;">
+          <div class="client-filter-group section-search">
             <div class="search-input-row">
               <input id="clients-search" placeholder="Pesquisar cliente..." />
               <div id="clients-search-menu" class="autocomplete-menu hidden"></div>
@@ -68,7 +68,7 @@
 
         <section id="tab-logs" class="hidden">
           <h2>Logs</h2>
-          <div class="client-filter-group" style="margin-bottom: 12px;">
+          <div class="client-filter-group section-search">
             <div class="search-input-row">
               <input id="logs-work-search" placeholder="Pesquisar logs por obra..." />
             </div>
@@ -82,8 +82,8 @@
 
         <section id="tab-add-work" class="hidden">
           <h2>Adicionar Obra</h2>
-          <form id="work-form">
-            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+          <form id="work-form" class="panel-form">
+            <div class="form-grid">
               <div>
                 <label for="work-title">Nome da obra</label>
                 <input id="work-title" required />
@@ -92,7 +92,7 @@
                 <label for="work-status">Estado</label>
                 <select id="work-status">
                   <option value="pending">Pendente/Encomenda</option>
-                  <option value="in_progress">Produçao</option>
+                  <option value="in_progress">Produção</option>
                   <option value="done">Finalizada</option>
                 </select>
               </div>
@@ -110,25 +110,25 @@
                 <label for="work-priority">Prioridade</label>
                 <select id="work-priority">
                   <option value="high">Alta</option>
-                  <option value="medium" selected>Media</option>
+                  <option value="medium" selected>Média</option>
                   <option value="low">Baixa</option>
                 </select>
               </div>
             </div>
-            <div style="margin-top: 10px">
-              <label for="work-description">Descricao</label>
+            <div class="form-field form-field-spaced">
+              <label for="work-description">Descrição</label>
               <textarea id="work-description"></textarea>
             </div>
-            <div style="margin-top: 10px">
-              <button type="submit" style="width: auto">Adicionar Obra</button>
+            <div class="form-actions">
+              <button type="submit">Adicionar Obra</button>
             </div>
           </form>
         </section>
 
         <section id="tab-add-client" class="hidden">
           <h2>Adicionar Cliente</h2>
-          <form id="client-form">
-            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+          <form id="client-form" class="panel-form">
+            <div class="form-grid">
               <div>
                 <label for="client-name">Nome</label>
                 <input id="client-name" required />
@@ -150,12 +150,12 @@
                 <input id="client-nif" inputmode="numeric" maxlength="9" />
               </div>
             </div>
-            <div style="margin-top: 10px">
+            <div class="form-field form-field-spaced">
               <label for="client-notes">Notas</label>
               <textarea id="client-notes"></textarea>
             </div>
-            <div style="margin-top: 10px">
-              <button type="submit" style="width: auto">Adicionar Cliente</button>
+            <div class="form-actions">
+              <button type="submit">Adicionar Cliente</button>
             </div>
           </form>
         </section>
@@ -163,8 +163,8 @@
         <section id="tab-users" class="hidden">
           <h2>Utilizadores</h2>
           <p class="muted">Apenas administradores podem gerir utilizadores.</p>
-          <form id="user-form">
-            <div style="display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+          <form id="user-form" class="panel-form">
+            <div class="form-grid">
               <div>
                 <label for="user-username">Username</label>
                 <input id="user-username" required />
@@ -181,11 +181,11 @@
                 </select>
               </div>
             </div>
-            <div style="margin-top: 10px">
-              <button type="submit" style="width: auto">Criar Utilizador</button>
+            <div class="form-actions">
+              <button type="submit">Criar Utilizador</button>
             </div>
           </form>
-          <div id="users-list" class="grid" style="margin-top: 14px"></div>
+          <div id="users-list" class="grid users-grid"></div>
         </section>
       </section>
     </main>
