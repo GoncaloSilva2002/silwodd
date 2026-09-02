@@ -231,9 +231,12 @@ button:active {
 .client-works-heading { margin-bottom: 12px; }
 .client-works-heading h3 { margin: 0; }
 .client-works-list { display: grid; gap: 10px; }
-.client-work-row { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.client-work-row { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); cursor: pointer; transition: border-color 160ms ease, box-shadow 160ms ease; }
+.client-work-row:hover, .client-work-row:focus-visible { border-color: var(--primary); box-shadow: 0 5px 18px rgba(27, 27, 24, .08); outline: none; }
 .client-work-row > div { display: grid; gap: 4px; }
 .client-work-row span { color: var(--muted); font-size: 13px; }
+.client-work-actions { justify-items: end; }
+.open-work-label { color: var(--primary) !important; font-weight: 700; }
 .danger-btn { width: auto; background: #a83a32; color: #fff; }
 .danger-btn:hover { background: #842d27; }
 
@@ -387,6 +390,30 @@ button:active {
   margin: 14px 0;
   color: var(--muted);
   white-space: pre-wrap;
+}
+
+.final-attachment-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #faf9f5;
+}
+
+.final-attachment-box > div:first-child { display: grid; gap: 8px; }
+
+.final-attachment-preview { margin: 0 0 20px; }
+.final-image-link { display: block; width: 100%; }
+.final-work-image { display: block; width: 100%; max-height: 480px; object-fit: cover; border-radius: 12px; border: 1px solid var(--border); }
+.final-step-upload { display: grid; gap: 8px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.final-step-upload p { margin: 0; }
+
+@media (max-width: 640px) {
+  .final-attachment-box { align-items: stretch; flex-direction: column; }
 }
 
 .public-link-box {

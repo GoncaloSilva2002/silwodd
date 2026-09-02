@@ -300,11 +300,11 @@ function materialHtml(work, material) {
           pdfPath
             ? `
               <div class="material-links">
-                <a class="material-link" href="${escapeHtml(pdfPath)}" target="_blank" rel="noopener noreferrer">Ver PDF</a>
-                <a class="material-link" href="${escapeHtml(pdfPath)}" download>Download PDF</a>
+                <a class="material-link" href="${escapeHtml(pdfPath)}" target="_blank" rel="noopener noreferrer">Ver anexo</a>
+                <a class="material-link" href="${escapeHtml(pdfPath)}" download>Download</a>
               </div>
             `
-            : `<span class="muted">Sem PDF</span>`
+            : `<span class="muted">Sem anexo</span>`
         }
       </div>
       ${canManageMaterials ? `
@@ -326,6 +326,10 @@ function materialHtml(work, material) {
         </button>
       </div>
       ${arrivedMeta ? `<p class="muted material-check-meta">${escapeHtml(arrivedMeta)}</p>` : ""}
+      <div class="material-actions material-document-actions">
+        <input type="file" class="material-document-file" accept="application/pdf,image/*" capture="environment" />
+        <button type="button" class="upload-material-document-btn">Anexar PDF ou imagem</button>
+      </div>
       <div class="material-order-note-box">
         <label><strong>Nota de encomenda</strong></label>
         <div class="material-order-note-links">${orderNoteHtml}</div>
@@ -344,14 +348,25 @@ function materialHtml(work, material) {
 }
 
 function renderMaterialLinks(pdfPath) {
-  if (!pdfPath) return `<span class="muted">Sem PDF</span>`;
+  if (!pdfPath) return `<span class="muted">Sem anexo</span>`;
   const safePath = escapeHtml(pdfPath);
   return `
     <div class="material-links">
-      <a class="material-link" href="${safePath}" target="_blank" rel="noopener noreferrer">Ver PDF</a>
-      <a class="material-link" href="${safePath}" download>Download PDF</a>
+      <a class="material-link" href="${safePath}" target="_blank" rel="noopener noreferrer">Ver anexo</a>
+      <a class="material-link" href="${safePath}" download>Download</a>
     </div>
   `;
+}
+
+function renderFinalAttachmentPreview(path) {
+  if (!path) return "";
+  const safePath = escapeHtml(path);
+  const pathWithoutQuery = String(path).split("?")[0].toLowerCase();
+  const isImage = /\.(jpe?g|png|webp|gif|heic|heif)$/.test(pathWithoutQuery);
+  if (isImage) {
+    return `<a class="final-image-link" href="${safePath}" target="_blank" rel="noopener noreferrer"><img class="final-work-image" src="${safePath}" alt="Imagem final da obra" /></a>`;
+  }
+  return `<a class="material-link" href="${safePath}" target="_blank" rel="noopener noreferrer">Ver anexo final da obra</a>`;
 }
 
 function updateMaterialItemFromWork(materialItem, work) {
@@ -455,14 +470,15 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
   const canUploadPdf = Boolean(step.can_upload_pdf);
   const checkMeta = formatProcessCheckMeta(step);
   const canManageProcess = user.role === "admin";
+  const isFinalStep = step.key === "installation_end";
   const pdfHtml = canUploadPdf
     ? `
       <div class="process-pdf-links">
         ${renderMaterialLinks(pdfPath)}
       </div>
       <div class="material-actions">
-        <input type="file" class="process-file" accept="application/pdf" />
-        <button type="button" class="upload-process-btn">Anexar PDF</button>
+        <input type="file" class="process-file" accept="application/pdf,image/*" capture="environment" />
+        <button type="button" class="upload-process-btn">Anexar PDF ou imagem</button>
       </div>
     `
     : "";
@@ -485,6 +501,16 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
       ${checkMeta ? `<p class="muted process-check-meta">${escapeHtml(checkMeta)}</p>` : ""}
       <p class="muted process-order-hint ${blockedByOrder ? "" : "hidden"}">Conclui a etapa anterior primeiro.</p>
       ${pdfHtml}
+      ${isFinalStep ? `
+        <div class="final-step-upload">
+          <label><strong>Anexo de fim da obra</strong></label>
+          <p class="muted">Anexa aqui a fotografia final ou um ficheiro PDF.</p>
+          <div class="material-actions">
+            <input type="file" class="final-attachment-file" accept="application/pdf,image/*" capture="environment" />
+            <button type="button" class="upload-final-attachment-btn">Anexar PDF ou imagem</button>
+          </div>
+        </div>
+      ` : ""}
     </div>
   `;
 }
@@ -589,6 +615,16 @@ function statusLabel(value) {
 function priorityLabel(value) {
   const found = priorityOptions.find((priority) => priority.value === value);
   return found ? found.label : "Média";
+}
+
+function formatDateOnly(value, fallback = "Sem data") {
+  if (!value) return fallback;
+  const datePart = String(value).split(/[T ]/)[0];
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("pt-PT");
 }
 
 function formatLogDate(value) {
@@ -706,6 +742,7 @@ function renderWorks(items, target) {
           </span>
         </button>
         <div class="work-details hidden">
+          ${w.final_attachment_path ? `<div class="final-attachment-preview">${renderFinalAttachmentPreview(w.final_attachment_path)}</div>` : ""}
           <div class="work-config-row">
             <div class="material-actions">
               <label><strong>Estado da obra</strong></label>
@@ -727,7 +764,7 @@ function renderWorks(items, target) {
             </div>
           </div>
           <div class="work-overview">
-            <div><span class="work-overview-label">Prazo</span><strong>${escapeHtml(w.due_date || "Sem data")}</strong></div>
+            <div><span class="work-overview-label">Prazo</span><strong>${escapeHtml(formatDateOnly(w.due_date))}</strong></div>
             <div><span class="work-overview-label">Progresso</span><strong>${completedSteps}/${processSteps.length} etapas</strong></div>
           </div>
           ${user.role === "admin" ? `
@@ -830,7 +867,7 @@ function renderClientDetail(client) {
     </form>
     <div class="client-works-heading"><h3>Obras associadas</h3><span class="muted">${works.length} ${works.length === 1 ? "obra" : "obras"}</span></div>
     <div class="client-works-list">
-      ${works.length ? works.map((work) => `<article class="client-work-row" data-work-id="${work.id}"><div><strong>${escapeHtml(work.title)}</strong><span>${escapeHtml(statusLabel(work.status))} · Prioridade ${escapeHtml(priorityLabel(work.priority))}</span><span>${escapeHtml(work.due_date || "Sem prazo definido")}</span></div>${user.role === "admin" ? `<button type="button" class="danger-btn delete-client-work-btn">Eliminar obra</button>` : ""}</article>`).join("") : `<div class="empty-state"><strong>Sem obras associadas</strong><span>Este cliente ainda não tem obras.</span></div>`}
+      ${works.length ? works.map((work) => `<article class="client-work-row" data-work-id="${work.id}" tabindex="0" role="button" aria-label="Abrir obra ${escapeHtml(work.title)}"><div><strong>${escapeHtml(work.title)}</strong><span>${escapeHtml(statusLabel(work.status))} · Prioridade ${escapeHtml(priorityLabel(work.priority))}</span><span>${escapeHtml(formatDateOnly(work.due_date, "Sem prazo definido"))}</span></div><div class="client-work-actions"><span class="open-work-label">Abrir obra &rarr;</span>${user.role === "admin" ? `<button type="button" class="danger-btn delete-client-work-btn">Eliminar obra</button>` : ""}</div></article>`).join("") : `<div class="empty-state"><strong>Sem obras associadas</strong><span>Este cliente ainda não tem obras.</span></div>`}
     </div>`;
   document.querySelectorAll("#client-edit-form input").forEach((input) => { input.disabled = user.role !== "admin"; });
 }
@@ -840,6 +877,15 @@ async function openClientDetail(clientId) {
   setActiveTab("client-detail");
   try { renderClientDetail(await api(`/api/clients/${clientId}`)); }
   catch (error) { clientDetailContent.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
+}
+
+async function openWorkFromClient(workId) {
+  worksFilterStatus = "";
+  worksFilterClient = "";
+  worksFilterClientId = "";
+  updateStatusFilterButtons();
+  setActiveTab("works");
+  await refreshWorksView({ workId });
 }
 
 function renderUsers(items) {
@@ -1446,7 +1492,16 @@ if (clientDetailContent) {
       if (!window.confirm("Eliminar este cliente e todas as obras associadas? Esta ação é definitiva.")) return;
       try { await api(`/api/clients/${clientId}`, { method: "DELETE" }); await loadData(); setActiveTab("clients"); }
       catch (error) { window.alert(error.message); }
+      return;
     }
+    const workRow = event.target.closest(".client-work-row[data-work-id]");
+    if (workRow) openWorkFromClient(workRow.dataset.workId);
+  });
+  clientDetailContent.addEventListener("keydown", (event) => {
+    const workRow = event.target.closest(".client-work-row[data-work-id]");
+    if (!workRow || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    openWorkFromClient(workRow.dataset.workId);
   });
 }
 
@@ -1500,6 +1555,21 @@ async function handleWorksInteraction(event) {
   if (!button) return;
 
   const workItem = button.closest(".work-item");
+  if (button.classList.contains("upload-final-attachment-btn")) {
+    const input = workItem?.querySelector(".final-attachment-file");
+    const file = input?.files?.[0];
+    if (!workItem || !file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
+    const formData = new FormData();
+    formData.append("file", file);
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workItem.dataset.workId}/final-attachment`, { method: "POST", body: formData });
+      await refreshWorksView({ workId: workItem.dataset.workId });
+      await loadLogs();
+    } catch (error) { window.alert(error.message); }
+    finally { button.disabled = false; }
+    return;
+  }
   if (button.classList.contains("create-public-link-btn")) {
     if (!workItem) return;
     const workId = workItem.dataset.workId;
@@ -1606,6 +1676,23 @@ async function handleWorksInteraction(event) {
     const materialKey = materialItem.dataset.materialKey;
     if (!workId || (!materialId && !materialKey)) return;
 
+    if (button.classList.contains("upload-material-document-btn")) {
+      const input = materialItem.querySelector(".material-document-file");
+      const file = input?.files?.[0];
+      if (!materialId) { window.alert("Guarda primeiro o material antes de anexar."); return; }
+      if (!file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
+      const formData = new FormData();
+      formData.append("file", file);
+      button.disabled = true;
+      try {
+        await api(`/api/works/${workId}/materials/item/${materialId}/upload`, { method: "POST", body: formData });
+        await refreshWorksView({ workId, detailTab: "materials" });
+        await loadLogs();
+      } catch (error) { window.alert(error.message); }
+      finally { button.disabled = false; }
+      return;
+    }
+
     if (button.classList.contains("material-delete-btn")) {
       const confirmed = window.confirm("Tem a certeza que quer eliminar este material?");
       if (!confirmed) return;
@@ -1658,16 +1745,16 @@ async function handleWorksInteraction(event) {
     const file = input?.files?.[0];
     if (!workId || !stepKey) return;
     if (!file) {
-      window.alert("Seleciona um ficheiro PDF primeiro.");
+      window.alert("Seleciona um PDF ou uma imagem.");
       return;
     }
-    if (file.type !== "application/pdf") {
-      window.alert("So sao permitidos ficheiros PDF.");
+    if (file.type !== "application/pdf" && !String(file.type || "").startsWith("image/")) {
+      window.alert("Só são permitidos ficheiros PDF ou imagens.");
       return;
     }
 
     const formData = new FormData();
-    formData.append("pdf", file);
+    formData.append("file", file);
     button.disabled = true;
     try {
       const updatedWork = await api(`/api/works/${workId}/process/${stepKey}/upload`, {

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS obras (
   process_steps_configured BOOLEAN NOT NULL DEFAULT FALSE,
   public_access_token_hash VARCHAR(64),
   public_access_created_at TIMESTAMPTZ,
+  final_attachment_path VARCHAR(255),
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT obras_prioridade_check CHECK (prioridade IN ('low', 'medium', 'high'))
 );

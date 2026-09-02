@@ -54,6 +54,7 @@ const schemaInfo = {
   obrasDueDateColumn: null,
   obrasPriorityColumn: null,
   obrasObservationsColumn: null,
+  obrasFinalAttachmentColumn: null,
   clientesNifColumn: null,
   clientesAddressColumn: null,
   obrasProcessConfiguredColumn: null
@@ -140,6 +141,18 @@ const imageUpload = multer({
   limits: { fileSize: 20 * 1024 * 1024 }
 });
 
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: (_req, file, cb) => {
+    const mime = String(file.mimetype || "").toLowerCase();
+    if (mime !== "application/pdf" && !mime.startsWith("image/")) {
+      return cb(new Error("Apenas ficheiros PDF ou imagens sao permitidos."));
+    }
+    return cb(null, true);
+  },
+  limits: { fileSize: 20 * 1024 * 1024 }
+});
+
 function requireAdmin(req, res, next) {
   if (req.user?.role !== "admin") {
     return res.status(403).json({ error: "Apenas admin pode executar esta acao." });
@@ -192,6 +205,7 @@ async function loadSchemaInfo() {
   schemaInfo.obrasPriorityColumn = priorityCandidates.find((name) => names.has(name)) || null;
   const observationsCandidates = ["observacoes", "observacoes_obra", "notes"];
   schemaInfo.obrasObservationsColumn = observationsCandidates.find((name) => names.has(name)) || null;
+  schemaInfo.obrasFinalAttachmentColumn = names.has("final_attachment_path") ? "final_attachment_path" : null;
   const processConfiguredCandidates = ["process_steps_configured", "etapas_configuradas"];
   schemaInfo.obrasProcessConfiguredColumn = processConfiguredCandidates.find((name) => names.has(name)) || null;
 
@@ -253,6 +267,13 @@ async function ensureWorksPublicAccessColumns() {
     await query("ALTER TABLE obras ADD COLUMN public_access_created_at TIMESTAMPTZ NULL");
   }
   await query("CREATE UNIQUE INDEX IF NOT EXISTS idx_obras_public_access_token_hash ON obras(public_access_token_hash) WHERE public_access_token_hash IS NOT NULL");
+}
+
+async function ensureWorksFinalAttachmentColumn() {
+  const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
+  if (!columns.some((column) => String(column.Field) === "final_attachment_path")) {
+    await query("ALTER TABLE obras ADD COLUMN final_attachment_path VARCHAR(255) NULL");
+  }
 }
 
 function hashPublicAccessToken(token) {
@@ -664,6 +685,9 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   const observationsSelect = schemaInfo.obrasObservationsColumn
     ? `o.${schemaInfo.obrasObservationsColumn} AS observacoes`
     : "NULL AS observacoes";
+  const finalAttachmentSelect = schemaInfo.obrasFinalAttachmentColumn
+    ? `o.${schemaInfo.obrasFinalAttachmentColumn} AS final_attachment_path`
+    : "NULL AS final_attachment_path";
 
   let sql = `
     SELECT
@@ -673,6 +697,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       ${dueDateSelect},
       ${prioritySelect},
       ${observationsSelect},
+      ${finalAttachmentSelect},
       (o.public_access_token_hash IS NOT NULL) AS public_access_enabled,
       c.id AS client_id,
       c.nome AS client_name,
@@ -771,6 +796,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       title: obra.nome_obra,
       description: obra.descricao || "",
       observations: obra.observacoes || "",
+      final_attachment_path: await resolveFileUrl(obra.final_attachment_path),
       public_access_enabled: Boolean(obra.public_access_enabled),
       status: mapStatusNameToCode(obra.estado_nome),
       due_date: obra.data_fim_prevista || null,
@@ -1488,13 +1514,13 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
     return res.status(400).json({ error: "Apenas a etapa Desenho da cozinha permite PDF." });
   }
 
-  upload.single("pdf")(req, res, async (error) => {
-    if (error) return res.status(400).json({ error: error.message || "Falha no upload do PDF." });
-    if (!req.file) return res.status(400).json({ error: "Selecione um ficheiro PDF." });
+  documentUpload.single("file")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona um PDF ou uma imagem." });
 
     try {
       const stepName = processStepMap[stepKey];
-      const publicPath = await uploadFile(req.file, `works/${id}/process/${stepKey}`, ".pdf");
+      const publicPath = await uploadFile(req.file, `works/${id}/process/${stepKey}`);
       const existing = await query(
         "SELECT id FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
         [id, stepName]
@@ -1520,7 +1546,7 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
       });
       return res.json(work || null);
     } catch (_err) {
-      return res.status(500).json({ error: "Erro ao guardar PDF da etapa." });
+      return res.status(500).json({ error: "Erro ao guardar anexo da etapa." });
     }
   });
 });
@@ -1573,9 +1599,9 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
   if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
 
-  upload.single("pdf")(req, res, async (error) => {
-    if (error) return res.status(400).json({ error: error.message || "Falha no upload do PDF." });
-    if (!req.file) return res.status(400).json({ error: "Selecione um ficheiro PDF." });
+  documentUpload.single("file")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona um PDF ou uma imagem." });
 
     try {
       const existing = await query(
@@ -1584,7 +1610,7 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
       );
       if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
 
-      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}`, ".pdf");
+      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}`);
       await query("UPDATE materiais SET pdf_path = ? WHERE id = ? AND id_obra = ?", [publicPath, materialId, id]);
 
       const rows = await getWorks(null);
@@ -1595,7 +1621,7 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
       });
       return res.json(work || null);
     } catch (_err) {
-      return res.status(500).json({ error: "Erro ao guardar PDF." });
+      return res.status(500).json({ error: "Erro ao guardar anexo." });
     }
   });
 });
@@ -1632,6 +1658,26 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
       return res.json(work || null);
     } catch (_err) {
       return res.status(500).json({ error: "Erro ao guardar foto da fatura." });
+    }
+  });
+});
+
+app.post("/api/works/:id/final-attachment", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+  documentUpload.single("file")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona um PDF ou uma imagem." });
+    try {
+      const existing = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [id]);
+      if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+      const storedPath = await uploadFile(req.file, `works/${id}/final`);
+      await query("UPDATE obras SET final_attachment_path = ? WHERE id = ?", [storedPath, id]);
+      const rows = await getWorks(null);
+      await createAuditLog(req, "upload_final_attachment", "work", id, id, { file_path: storedPath });
+      return res.json(rows.find((item) => item.id === id) || null);
+    } catch (uploadError) {
+      return res.status(500).json({ error: uploadError?.message || "Erro ao guardar anexo final." });
     }
   });
 });
@@ -1947,6 +1993,7 @@ async function start() {
     await ensureClientsAddressColumn();
     await ensureWorksProcessConfiguredColumn();
     await ensureWorksPublicAccessColumns();
+    await ensureWorksFinalAttachmentColumn();
     await ensureMaterialsExtraColumns();
     await initializeMaterialsForExistingWorks();
     await initializeProcessStepsForExistingWorks();
