@@ -102,6 +102,56 @@ button:active {
   margin-top: 10px;
 }
 
+.toast-container {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 100;
+  display: grid;
+  width: min(380px, calc(100vw - 36px));
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid #b8cdbb;
+  border-radius: 10px;
+  background: #eef8ef;
+  color: #17451f;
+  box-shadow: 0 12px 34px rgba(27, 27, 24, .18);
+  pointer-events: auto;
+  animation: toast-in 180ms ease-out;
+  font-weight: 700;
+}
+
+.toast button {
+  width: 30px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.toast-leaving {
+  opacity: 0;
+  transform: translateY(-5px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+}
+
 .muted {
   color: var(--muted);
 }
@@ -1648,6 +1698,19 @@ body.role-funcionario .process-item-tools {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+  }
+
+  .toast-container {
+    top: auto;
+    right: 10px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 10px;
+    width: auto;
+  }
+
+  .toast {
+    padding: 11px 12px;
+    font-size: 14px;
   }
 
   .card {

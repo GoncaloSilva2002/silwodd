@@ -1,5 +1,6 @@
 const token = localStorage.getItem("token");
 const user = JSON.parse(localStorage.getItem("user") || "{}");
+const toastContainer = document.getElementById("toast-container");
 
 if (!token) {
   window.location.href = "/login.html";
@@ -218,6 +219,48 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+function showToast(message, type = "success") {
+  if (!toastContainer || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" aria-label="Fechar aviso">&times;</button>`;
+  const remove = () => {
+    if (!toast.isConnected || toast.classList.contains("toast-leaving")) return;
+    toast.classList.add("toast-leaving");
+    window.setTimeout(() => toast.remove(), 180);
+  };
+  toast.querySelector("button").addEventListener("click", remove);
+  toastContainer.appendChild(toast);
+  window.setTimeout(remove, 3500);
+}
+
+function getSuccessMessage(path, method) {
+  const verb = String(method || "GET").toUpperCase();
+  if (verb === "GET") return "";
+  if (verb === "POST" && path === "/api/clients") return "Cliente criado com sucesso.";
+  if (verb === "PATCH" && /^\/api\/clients\/\d+$/.test(path)) return "Cliente atualizado com sucesso.";
+  if (verb === "DELETE" && /^\/api\/clients\/\d+$/.test(path)) return "Cliente eliminado com sucesso.";
+  if (verb === "POST" && path === "/api/works") return "Obra criada com sucesso.";
+  if (verb === "DELETE" && /^\/api\/works\/\d+$/.test(path)) return "Obra eliminada com sucesso.";
+  if (path.includes("/materials/") && verb === "DELETE") return "Material eliminado com sucesso.";
+  if (path.endsWith("/materials") && verb === "POST") return "Material adicionado com sucesso.";
+  if (path.includes("/materials/") && verb === "POST") return "Anexo do material guardado com sucesso.";
+  if (path.includes("/materials/") && verb === "PATCH") return "Material atualizado com sucesso.";
+  if (path.includes("/process/") && verb === "DELETE") return "Etapa eliminada com sucesso.";
+  if (path.endsWith("/process") && verb === "POST") return "Etapa adicionada com sucesso.";
+  if (path.includes("/process/") && verb === "POST") return "Anexo da etapa guardado com sucesso.";
+  if (path.includes("/process/") && verb === "PATCH") return "Etapa atualizada com sucesso.";
+  if (path.endsWith("/final-attachment") && verb === "POST") return "Anexo final guardado com sucesso.";
+  if (path.endsWith("/status") && verb === "PATCH") return "Estado da obra atualizado.";
+  if (path.endsWith("/priority") && verb === "PATCH") return "Prioridade atualizada.";
+  if (path.endsWith("/observations") && verb === "PATCH") return "Observações guardadas.";
+  if (path.includes("/public-link")) return verb === "DELETE" ? "Acesso do cliente revogado." : "Link de acompanhamento criado.";
+  if (verb === "POST" && path === "/api/users") return "Utilizador criado com sucesso.";
+  if (verb === "DELETE" && path.startsWith("/api/users/")) return "Utilizador eliminado com sucesso.";
+  return "Alterações guardadas com sucesso.";
+}
+
 async function api(path, options = {}) {
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -243,6 +286,10 @@ async function api(path, options = {}) {
   if (!res.ok) {
     throw new Error(data.error || "Erro no pedido.");
   }
+  const successMessage = options.successMessage === false
+    ? ""
+    : options.successMessage || getSuccessMessage(path, options.method);
+  if (successMessage) showToast(successMessage);
   return data;
 }
 
@@ -1507,7 +1554,6 @@ if (clientDetailContent) {
       await api(`/api/clients/${form.dataset.clientId}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
       await loadData();
       await openClientDetail(form.dataset.clientId);
-      window.alert("Cliente atualizado com sucesso.");
     } catch (error) { window.alert(error.message); }
   });
   clientDetailContent.addEventListener("click", async (event) => {
@@ -1553,7 +1599,6 @@ if (userForm) {
         body: JSON.stringify(payload)
       });
       userForm.reset();
-      window.alert("Utilizador criado com sucesso.");
       await loadUsers();
     } catch (error) {
       window.alert(error.message);
