@@ -988,6 +988,35 @@ body.role-funcionario .process-item-tools {
   padding: 8px 10px;
 }
 
+.attachment-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.attachment-choice-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #eeece3;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.attachment-choice-btn.selected {
+  border-color: var(--primary);
+  background: #dedbd0;
+  box-shadow: 0 0 0 2px rgba(27, 27, 24, .08);
+}
+
 .topbar {
   display: flex;
   justify-content: space-between;
@@ -1598,5 +1627,103 @@ body.role-funcionario .process-item-tools {
   .materials-grid,
   .process-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Ajustes finais para telemóveis */
+@media (max-width: 640px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .card {
+    padding-right: max(12px, env(safe-area-inset-right));
+    padding-bottom: max(18px, env(safe-area-inset-bottom));
+    padding-left: max(12px, env(safe-area-inset-left));
+  }
+
+  .tabs {
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+
+  h2 {
+    margin-bottom: 14px;
+    font-size: 24px;
+  }
+
+  .section-search,
+  .panel-form {
+    padding: 12px;
+  }
+
+  .status-filter-group {
+    grid-template-columns: 1fr;
+  }
+
+  .status-filter-btn {
+    text-align: left;
+  }
+
+  .work-overview {
+    grid-template-columns: 1fr;
+  }
+
+  .material-actions,
+  .material-document-actions,
+  .final-step-upload .material-actions {
+    width: 100%;
+    min-width: 0;
+  }
+
+  input[type="file"] {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding: 8px;
+    overflow: hidden;
+  }
+
+  input[type="file"]::file-selector-button {
+    max-width: 100%;
+    margin-right: 8px;
+    padding: 8px;
+    border: 0;
+    border-radius: 6px;
+    background: #eeece3;
+    color: var(--text);
+    font-weight: 700;
+  }
+
+  .client-works-heading {
+    align-items: flex-start;
+  }
+
+  .client-work-actions {
+    width: 100%;
+    justify-items: stretch;
+  }
+
+  .open-work-label {
+    text-align: left;
+  }
+
+  .final-work-image {
+    max-height: 62vh;
+    object-fit: contain;
+    background: #f4f3ed;
+  }
+
+  .material-links a,
+  .work-description,
+  .entity-details dd {
+    overflow-wrap: anywhere;
+  }
+
+  .secondary-btn {
+    width: 100%;
   }
 }

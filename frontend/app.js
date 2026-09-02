@@ -327,8 +327,11 @@ function materialHtml(work, material) {
       </div>
       ${arrivedMeta ? `<p class="muted material-check-meta">${escapeHtml(arrivedMeta)}</p>` : ""}
       <div class="material-actions material-document-actions">
-        <input type="file" class="material-document-file" accept="application/pdf,image/*" capture="environment" />
-        <button type="button" class="upload-material-document-btn">Anexar PDF ou imagem</button>
+        <div class="attachment-choice">
+          <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="material-document-file hidden" accept="application/pdf,image/*" /></label>
+          <label class="attachment-choice-btn">Tirar foto<input type="file" class="material-camera-file hidden" accept="image/*" capture="environment" /></label>
+        </div>
+        <button type="button" class="upload-material-document-btn">Anexar</button>
       </div>
       <div class="material-order-note-box">
         <label><strong>Nota de encomenda</strong></label>
@@ -477,8 +480,11 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
         ${renderMaterialLinks(pdfPath)}
       </div>
       <div class="material-actions">
-        <input type="file" class="process-file" accept="application/pdf,image/*" capture="environment" />
-        <button type="button" class="upload-process-btn">Anexar PDF ou imagem</button>
+        <div class="attachment-choice">
+          <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="process-file hidden" accept="application/pdf,image/*" /></label>
+          <label class="attachment-choice-btn">Tirar foto<input type="file" class="process-camera-file hidden" accept="image/*" capture="environment" /></label>
+        </div>
+        <button type="button" class="upload-process-btn">Anexar</button>
       </div>
     `
     : "";
@@ -506,8 +512,11 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
           <label><strong>Anexo de fim da obra</strong></label>
           <p class="muted">Anexa aqui a fotografia final ou um ficheiro PDF.</p>
           <div class="material-actions">
-            <input type="file" class="final-attachment-file" accept="application/pdf,image/*" capture="environment" />
-            <button type="button" class="upload-final-attachment-btn">Anexar PDF ou imagem</button>
+            <div class="attachment-choice">
+              <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="final-attachment-file hidden" accept="application/pdf,image/*" /></label>
+              <label class="attachment-choice-btn">Tirar foto<input type="file" class="final-camera-file hidden" accept="image/*" capture="environment" /></label>
+            </div>
+            <button type="button" class="upload-final-attachment-btn">Anexar</button>
           </div>
         </div>
       ` : ""}
@@ -557,6 +566,8 @@ function updateProcessItemFromWork(processItem, work) {
     }
     const fileInput = processItem.querySelector(".process-file");
     if (fileInput) fileInput.value = "";
+    const cameraInput = processItem.querySelector(".process-camera-file");
+    if (cameraInput) cameraInput.value = "";
   }
 }
 
@@ -1557,7 +1568,8 @@ async function handleWorksInteraction(event) {
   const workItem = button.closest(".work-item");
   if (button.classList.contains("upload-final-attachment-btn")) {
     const input = workItem?.querySelector(".final-attachment-file");
-    const file = input?.files?.[0];
+    const cameraInput = workItem?.querySelector(".final-camera-file");
+    const file = input?.files?.[0] || cameraInput?.files?.[0];
     if (!workItem || !file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
     const formData = new FormData();
     formData.append("file", file);
@@ -1678,7 +1690,8 @@ async function handleWorksInteraction(event) {
 
     if (button.classList.contains("upload-material-document-btn")) {
       const input = materialItem.querySelector(".material-document-file");
-      const file = input?.files?.[0];
+      const cameraInput = materialItem.querySelector(".material-camera-file");
+      const file = input?.files?.[0] || cameraInput?.files?.[0];
       if (!materialId) { window.alert("Guarda primeiro o material antes de anexar."); return; }
       if (!file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
       const formData = new FormData();
@@ -1742,7 +1755,8 @@ async function handleWorksInteraction(event) {
     const workId = processItem.dataset.workId;
     const stepKey = processItem.dataset.stepKey;
     const input = processItem.querySelector(".process-file");
-    const file = input?.files?.[0];
+    const cameraInput = processItem.querySelector(".process-camera-file");
+    const file = input?.files?.[0] || cameraInput?.files?.[0];
     if (!workId || !stepKey) return;
     if (!file) {
       window.alert("Seleciona um PDF ou uma imagem.");
@@ -2085,6 +2099,16 @@ function handleProcessStepInputKeydown(event) {
   if (addButton) addButton.click();
 }
 
+function handleAttachmentChoiceChange(event) {
+  const input = event.target.closest(".attachment-choice input[type='file']");
+  if (!input) return;
+  const choice = input.closest(".attachment-choice");
+  choice.querySelectorAll("input[type='file']").forEach((otherInput) => {
+    if (otherInput !== input) otherInput.value = "";
+    otherInput.closest(".attachment-choice-btn")?.classList.toggle("selected", otherInput === input && Boolean(input.files?.length));
+  });
+}
+
 async function persistProcessStepOrder(workItem) {
   const workId = workItem?.dataset.workId;
   const processGrid = workItem?.querySelector(".process-grid");
@@ -2175,6 +2199,7 @@ function handleProcessDragEnd(event) {
   list.addEventListener("click", handleMaterialCheckboxChange);
   list.addEventListener("change", handleMaterialOrderNoteFileChange);
   list.addEventListener("change", handleMaterialInvoiceFileChange);
+  list.addEventListener("change", handleAttachmentChoiceChange);
   list.addEventListener("click", handleProcessCheckboxChange);
   list.addEventListener("keydown", handleProcessStepInputKeydown);
   list.addEventListener("dragstart", handleProcessDragStart);
