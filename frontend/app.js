@@ -9,6 +9,8 @@ document.body.classList.add(`role-${String(user.role || "user").toLowerCase()}`)
 
 const welcomeLine = document.getElementById("welcome-line");
 const logoutBtn = document.getElementById("logout-btn");
+const mobileMenuBtn = document.getElementById("mobile-menu-btn");
+const mobileMenuOverlay = document.getElementById("mobile-menu-overlay");
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabWorks = document.getElementById("tab-works");
 const tabClients = document.getElementById("tab-clients");
@@ -183,7 +185,27 @@ function setActiveTab(tab) {
 tabButtons.forEach((button) => {
   button.addEventListener("click", () => {
     setActiveTab(button.dataset.tab);
+    closeMobileMenu();
   });
+});
+
+function setMobileMenu(open) {
+  document.body.classList.toggle("mobile-menu-open", open);
+  mobileMenuBtn?.setAttribute("aria-expanded", String(open));
+  mobileMenuBtn?.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+  mobileMenuOverlay?.setAttribute("aria-hidden", String(!open));
+}
+
+function closeMobileMenu() {
+  setMobileMenu(false);
+}
+
+mobileMenuBtn?.addEventListener("click", () => {
+  setMobileMenu(!document.body.classList.contains("mobile-menu-open"));
+});
+mobileMenuOverlay?.addEventListener("click", closeMobileMenu);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMobileMenu();
 });
 
 function escapeHtml(value) {
