@@ -1,5 +1,5 @@
-require("dotenv").config();
 const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const fs = require("fs");
 const crypto = require("crypto");
 const express = require("express");
@@ -1959,6 +1959,10 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));
+app.get(["/login", "/login/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));
+app.get(["/app", "/app/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "app.html")));
+app.get(["/acompanhar", "/acompanhar/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "acompanhar.html")));
+app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
 
 function validateRuntimeConfig() {
   const dbPort = Number(process.env.DB_PORT || 5432);

@@ -45,7 +45,9 @@ async function getFileUrl(storedPath) {
   if (!storedPath || !String(storedPath).startsWith("storage:")) return storedPath || null;
   if (!storage) return null;
   const objectPath = String(storedPath).slice("storage:".length);
-  const { data, error } = await storage.storage.from(bucket).createSignedUrl(objectPath, 60 * 60);
+  // Mantem os anexos privados, mas evita que uma obra aberta durante o dia
+  // fique com imagens quebradas ao fim de apenas uma hora.
+  const { data, error } = await storage.storage.from(bucket).createSignedUrl(objectPath, 60 * 60 * 24 * 7);
   if (error) return null;
   return data?.signedUrl || null;
 }
