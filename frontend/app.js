@@ -12,6 +12,9 @@ const logoutBtn = document.getElementById("logout-btn");
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabWorks = document.getElementById("tab-works");
 const tabClients = document.getElementById("tab-clients");
+const tabClientDetail = document.getElementById("tab-client-detail");
+const clientDetailContent = document.getElementById("client-detail-content");
+const clientDetailBack = document.getElementById("client-detail-back");
 const tabLogs = document.getElementById("tab-logs");
 const tabAddWork = document.getElementById("tab-add-work");
 const tabAddClient = document.getElementById("tab-add-client");
@@ -156,6 +159,7 @@ function setActiveTab(tab) {
   const sections = {
     works: tabWorks,
     clients: tabClients,
+    "client-detail": tabClientDetail,
     logs: tabLogs,
     "add-work": tabAddWork,
     "add-client": tabAddClient,
@@ -789,7 +793,7 @@ function renderClients(items) {
   clientsList.innerHTML = items
     .map(
       (c) => `
-      <article class="client-item client-card">
+      <article class="client-item client-card" data-client-id="${c.id}" tabindex="0" role="button" aria-label="Abrir cliente ${escapeHtml(c.name)}">
         <div class="entity-card-head">
           <div class="entity-avatar" aria-hidden="true">${escapeHtml(String(c.name || "?").charAt(0).toUpperCase())}</div>
           <div><h3>${escapeHtml(c.name)}</h3><span class="muted">Cliente</span></div>
@@ -805,6 +809,37 @@ function renderClients(items) {
     `
     )
     .join("");
+}
+
+function renderClientDetail(client) {
+  const works = Array.isArray(client.works) ? client.works : [];
+  clientDetailContent.innerHTML = `
+    <div class="client-detail-header">
+      <div class="entity-card-head"><div class="entity-avatar">${escapeHtml(String(client.name || "?").charAt(0).toUpperCase())}</div><div><h2>${escapeHtml(client.name)}</h2><span class="muted">Ficha do cliente</span></div></div>
+      ${user.role === "admin" ? `<button type="button" class="danger-btn delete-client-btn">Eliminar cliente</button>` : ""}
+    </div>
+    <form id="client-edit-form" class="panel-form client-detail-form" data-client-id="${client.id}">
+      <div class="form-grid">
+        <div><label>Nome</label><input name="name" value="${escapeHtml(client.name || "")}" required></div>
+        <div><label>Telefone</label><input name="phone" value="${escapeHtml(client.phone || "")}"></div>
+        <div><label>Email</label><input name="email" type="email" value="${escapeHtml(client.email || "")}"></div>
+        <div><label>Morada</label><input name="address" value="${escapeHtml(client.address || "")}"></div>
+        <div><label>NIF</label><input name="nif" inputmode="numeric" maxlength="9" value="${escapeHtml(client.nif || "")}"></div>
+      </div>
+      ${user.role === "admin" ? `<div class="form-actions"><button type="submit">Guardar alterações</button></div>` : ""}
+    </form>
+    <div class="client-works-heading"><h3>Obras associadas</h3><span class="muted">${works.length} ${works.length === 1 ? "obra" : "obras"}</span></div>
+    <div class="client-works-list">
+      ${works.length ? works.map((work) => `<article class="client-work-row" data-work-id="${work.id}"><div><strong>${escapeHtml(work.title)}</strong><span>${escapeHtml(statusLabel(work.status))} · Prioridade ${escapeHtml(priorityLabel(work.priority))}</span><span>${escapeHtml(work.due_date || "Sem prazo definido")}</span></div>${user.role === "admin" ? `<button type="button" class="danger-btn delete-client-work-btn">Eliminar obra</button>` : ""}</article>`).join("") : `<div class="empty-state"><strong>Sem obras associadas</strong><span>Este cliente ainda não tem obras.</span></div>`}
+    </div>`;
+  document.querySelectorAll("#client-edit-form input").forEach((input) => { input.disabled = user.role !== "admin"; });
+}
+
+async function openClientDetail(clientId) {
+  clientDetailContent.innerHTML = "<p class='muted'>A carregar cliente...</p>";
+  setActiveTab("client-detail");
+  try { renderClientDetail(await api(`/api/clients/${clientId}`)); }
+  catch (error) { clientDetailContent.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
 }
 
 function renderUsers(items) {
@@ -1368,6 +1403,50 @@ if (clientsSearchMenu) {
     clientsFilterTerm = "";
     clientsSearchMenu.classList.add("hidden");
     applyClientsFilter();
+  });
+}
+
+if (clientDetailBack) clientDetailBack.addEventListener("click", () => setActiveTab("clients"));
+
+if (clientsList) {
+  const openSelectedClient = (event) => {
+    const card = event.target.closest(".client-item[data-client-id]");
+    if (!card || (event.type === "keydown" && !["Enter", " "].includes(event.key))) return;
+    if (event.type === "keydown") event.preventDefault();
+    openClientDetail(card.dataset.clientId);
+  };
+  clientsList.addEventListener("click", openSelectedClient);
+  clientsList.addEventListener("keydown", openSelectedClient);
+}
+
+if (clientDetailContent) {
+  clientDetailContent.addEventListener("submit", async (event) => {
+    const form = event.target.closest("#client-edit-form");
+    if (!form) return;
+    event.preventDefault();
+    try {
+      await api(`/api/clients/${form.dataset.clientId}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      await loadData();
+      await openClientDetail(form.dataset.clientId);
+      window.alert("Cliente atualizado com sucesso.");
+    } catch (error) { window.alert(error.message); }
+  });
+  clientDetailContent.addEventListener("click", async (event) => {
+    const form = document.getElementById("client-edit-form");
+    const clientId = form?.dataset.clientId;
+    if (!clientId) return;
+    if (event.target.closest(".delete-client-work-btn")) {
+      const row = event.target.closest(".client-work-row");
+      if (!window.confirm("Tem a certeza que quer eliminar esta obra? Esta ação é definitiva.")) return;
+      try { await api(`/api/works/${row.dataset.workId}`, { method: "DELETE" }); await openClientDetail(clientId); await loadData(); }
+      catch (error) { window.alert(error.message); }
+      return;
+    }
+    if (event.target.closest(".delete-client-btn")) {
+      if (!window.confirm("Eliminar este cliente e todas as obras associadas? Esta ação é definitiva.")) return;
+      try { await api(`/api/clients/${clientId}`, { method: "DELETE" }); await loadData(); setActiveTab("clients"); }
+      catch (error) { window.alert(error.message); }
+    }
   });
 }
 

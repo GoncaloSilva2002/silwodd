@@ -219,7 +219,25 @@ button:active {
 
 .client-item {
   padding: 18px;
+  cursor: pointer;
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
 }
+
+.client-item:hover, .client-item:focus-visible { border-color: var(--primary); transform: translateY(-1px); box-shadow: 0 8px 24px rgba(27, 27, 24, .09); outline: none; }
+.secondary-btn { width: auto; margin-bottom: 20px; background: #eeece3; color: var(--text); }
+.client-detail-header, .client-works-heading, .client-work-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.client-detail-header { margin-bottom: 18px; }
+.client-detail-form { margin-bottom: 28px; }
+.client-works-heading { margin-bottom: 12px; }
+.client-works-heading h3 { margin: 0; }
+.client-works-list { display: grid; gap: 10px; }
+.client-work-row { padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.client-work-row > div { display: grid; gap: 4px; }
+.client-work-row span { color: var(--muted); font-size: 13px; }
+.danger-btn { width: auto; background: #a83a32; color: #fff; }
+.danger-btn:hover { background: #842d27; }
+
+@media (max-width: 640px) { .client-detail-header, .client-work-row { align-items: stretch; flex-direction: column; } .danger-btn { width: 100%; } }
 
 .client-item p {
   margin: 7px 0;

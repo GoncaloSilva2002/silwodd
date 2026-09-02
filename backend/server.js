@@ -1652,6 +1652,79 @@ app.get("/api/clients", requireAuth, async (_req, res) => {
   }
 });
 
+app.get("/api/clients/:id", requireAuth, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente invalido." });
+    const rows = await query(
+      `SELECT id, nome AS name, telefone AS phone, email,
+              ${schemaInfo.clientesNifColumn ? `${schemaInfo.clientesNifColumn} AS nif,` : "NULL AS nif,"}
+              ${schemaInfo.clientesAddressColumn ? `${schemaInfo.clientesAddressColumn} AS address,` : "NULL AS address,"}
+              created_at FROM clientes WHERE id = ? LIMIT 1`, [id]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Cliente nao encontrado." });
+    return res.json({ ...rows[0], notes: null, works: await getWorks(null, "", id) });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao carregar cliente." });
+  }
+});
+
+app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { name, phone, email, nif, address } = req.body || {};
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente invalido." });
+    if (!String(name || "").trim()) return res.status(400).json({ error: "O nome do cliente e obrigatorio." });
+    const nifValue = String(nif || "").trim();
+    if (nifValue && !/^\d{9}$/.test(nifValue)) return res.status(400).json({ error: "NIF deve ter 9 digitos." });
+    if (nifValue && schemaInfo.clientesNifColumn) {
+      const duplicate = await query(`SELECT id FROM clientes WHERE ${schemaInfo.clientesNifColumn} = ? AND id <> ? LIMIT 1`, [nifValue, id]);
+      if (duplicate[0]) return res.status(409).json({ error: "Ja existe um cliente com esse NIF." });
+    }
+    const assignments = ["nome = ?", "telefone = ?", "email = ?"];
+    const values = [String(name).trim(), String(phone || "").trim() || null, String(email || "").trim() || null];
+    if (schemaInfo.clientesNifColumn) { assignments.push(`${schemaInfo.clientesNifColumn} = ?`); values.push(nifValue || null); }
+    if (schemaInfo.clientesAddressColumn) { assignments.push(`${schemaInfo.clientesAddressColumn} = ?`); values.push(String(address || "").trim() || null); }
+    values.push(id);
+    const result = await query(`UPDATE clientes SET ${assignments.join(", ")} WHERE id = ?`, values);
+    if (!result.affectedRows) return res.status(404).json({ error: "Cliente nao encontrado." });
+    await createAuditLog(req, "update_client", "client", id, null, { name: String(name).trim(), phone, email, nif: nifValue, address });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar cliente." });
+  }
+});
+
+app.delete("/api/works/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    const existing = await query("SELECT nome_obra FROM obras WHERE id = ? LIMIT 1", [id]);
+    if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+    await createAuditLog(req, "delete_work", "work", id, null, { title: existing[0].nome_obra });
+    await query("DELETE FROM obras WHERE id = ?", [id]);
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar obra." });
+  }
+});
+
+app.delete("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente invalido." });
+    const existing = await query("SELECT nome FROM clientes WHERE id = ? LIMIT 1", [id]);
+    if (!existing[0]) return res.status(404).json({ error: "Cliente nao encontrado." });
+    const works = await query("SELECT id FROM obras WHERE id_cliente = ?", [id]);
+    for (const work of works) await query("DELETE FROM obras WHERE id = ?", [work.id]);
+    await query("DELETE FROM clientes WHERE id = ?", [id]);
+    await createAuditLog(req, "delete_client", "client", id, null, { name: existing[0].nome, deleted_works: works.length });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar cliente." });
+  }
+});
+
 app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, phone, email, nif, address } = req.body || {};
