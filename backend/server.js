@@ -1258,15 +1258,15 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
   }
 });
 
-app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth, requireAdmin, async (req, res) => {
+app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const materialId = Number(req.params.materialId);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
   if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
 
-  upload.single("pdf")(req, res, async (error) => {
-    if (error) return res.status(400).json({ error: error.message || "Falha no upload do PDF." });
-    if (!req.file) return res.status(400).json({ error: "Seleciona um ficheiro PDF." });
+  documentUpload.single("file")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona um PDF ou uma imagem." });
 
     try {
       const existing = await query(
@@ -1275,7 +1275,7 @@ app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth
       );
       if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
 
-      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}/order-notes`, ".pdf");
+      const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}/order-notes`);
       await query(
         "UPDATE materiais SET note_encomenda_pdf_path = ? WHERE id = ? AND id_obra = ?",
         [publicPath, materialId, id]
@@ -1289,7 +1289,7 @@ app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth
       });
       return res.json(work || null);
     } catch (_err) {
-      return res.status(500).json({ error: "Erro ao guardar PDF da nota de encomenda." });
+      return res.status(500).json({ error: "Erro ao guardar a nota de encomenda." });
     }
   });
 });
@@ -1632,9 +1632,9 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
   if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
 
-  imageUpload.single("invoice_photo")(req, res, async (error) => {
-    if (error) return res.status(400).json({ error: error.message || "Falha no upload da foto." });
-    if (!req.file) return res.status(400).json({ error: "Seleciona ou tira uma foto da fatura." });
+  documentUpload.single("file")(req, res, async (error) => {
+    if (error) return res.status(400).json({ error: error.message || "Falha no upload do comprovativo." });
+    if (!req.file) return res.status(400).json({ error: "Seleciona um ficheiro ou tira uma foto." });
 
     try {
       const existing = await query(
@@ -1657,7 +1657,7 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
       });
       return res.json(work || null);
     } catch (_err) {
-      return res.status(500).json({ error: "Erro ao guardar foto da fatura." });
+      return res.status(500).json({ error: "Erro ao guardar o comprovativo de receção." });
     }
   });
 });

@@ -57,8 +57,6 @@ let clientsCache = [];
 let usersCache = [];
 let logsCache = [];
 let draggedProcessStepId = null;
-let pendingMaterialReceipt = { workId: null, materialId: null };
-let pendingMaterialOrder = { workId: null, materialId: null };
 
 const defaultMaterialTypes = [
   { key: "stone", label: "Pedra" },
@@ -351,15 +349,15 @@ function materialHtml(work, material) {
         <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" download>Download nota</a>
       </div>
     `
-    : `<span class="muted">Sem nota em PDF</span>`;
+    : `<span class="muted">Sem nota de encomenda</span>`;
   const invoicePhotoHtml = invoicePhotoPath
     ? `
       <div class="material-links">
-        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver fatura</a>
-        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download fatura</a>
+        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver comprovativo</a>
+        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download comprovativo</a>
       </div>
     `
-    : `<span class="muted">Sem foto da fatura</span>`;
+    : `<span class="muted">Sem comprovativo de receção</span>`;
 
   return `
     <div class="material-item" data-work-id="${work.id}" data-material-id="${material.id || ""}" data-material-key="${material.key || ""}">
@@ -388,6 +386,17 @@ function materialHtml(work, material) {
         </button>
       </div>
       ${orderedMeta ? `<p class="muted material-check-meta">${escapeHtml(orderedMeta)}</p>` : ""}
+      <div class="material-order-note-box">
+        <label><strong>Nota de encomenda</strong></label>
+        <div class="material-order-note-links">${orderNoteHtml}</div>
+        <div class="material-actions material-order-note-actions">
+          <div class="attachment-choice">
+            <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="material-order-note-file hidden" accept="application/pdf,image/*" /></label>
+            <label class="attachment-choice-btn">Tirar foto<input type="file" class="material-order-note-camera hidden" accept="image/*" capture="environment" /></label>
+          </div>
+          <button type="button" class="upload-material-order-note-btn">Anexar</button>
+        </div>
+      </div>
       <div class="material-toggle-row">
         <span>Recebido</span>
         <button type="button" class="material-toggle-btn material-arrived ${arrived ? "done" : ""}" aria-label="${arrived ? "Recebido" : "Marcar como recebido"}">
@@ -395,25 +404,16 @@ function materialHtml(work, material) {
         </button>
       </div>
       ${arrivedMeta ? `<p class="muted material-check-meta">${escapeHtml(arrivedMeta)}</p>` : ""}
-      <div class="material-actions material-document-actions">
-        <div class="attachment-choice">
-          <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="material-document-file hidden" accept="application/pdf,image/*" /></label>
-          <label class="attachment-choice-btn">Tirar foto<input type="file" class="material-camera-file hidden" accept="image/*" capture="environment" /></label>
-        </div>
-        <button type="button" class="upload-material-document-btn">Anexar</button>
-      </div>
-      <div class="material-order-note-box">
-        <label><strong>Nota de encomenda</strong></label>
-        <div class="material-order-note-links">${orderNoteHtml}</div>
-        ${canManageMaterials ? `
-        <input type="file" class="material-order-note-file hidden" accept="application/pdf" />
-        <p class="muted">Anexo opcional.</p>
-        ` : ""}
-      </div>
       <div class="material-invoice-box">
-        <label><strong>Fatura de rececao</strong></label>
+        <label><strong>Anexo do recebido</strong></label>
         <div class="material-invoice-links">${invoicePhotoHtml}</div>
-        <input type="file" class="material-invoice-file hidden" accept="image/*" capture="environment" />
+        <div class="material-actions material-receipt-actions">
+          <div class="attachment-choice">
+            <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="material-invoice-file hidden" accept="application/pdf,image/*" /></label>
+            <label class="attachment-choice-btn">Tirar foto<input type="file" class="material-invoice-camera hidden" accept="image/*" capture="environment" /></label>
+          </div>
+          <button type="button" class="upload-material-receipt-btn">Anexar</button>
+        </div>
       </div>
     </div>
   `;
@@ -482,7 +482,7 @@ function updateMaterialItemFromWork(materialItem, work) {
           <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" download>Download nota</a>
         </div>
       `
-      : `<span class="muted">Sem nota em PDF</span>`;
+      : `<span class="muted">Sem nota de encomenda</span>`;
   }
 
   const invoiceLinksContainer = materialItem.querySelector(".material-invoice-links");
@@ -490,11 +490,11 @@ function updateMaterialItemFromWork(materialItem, work) {
     invoiceLinksContainer.innerHTML = invoicePhotoPath
       ? `
         <div class="material-links">
-          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver fatura</a>
-          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download fatura</a>
+          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver comprovativo</a>
+          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download comprovativo</a>
         </div>
       `
-      : `<span class="muted">Sem foto da fatura</span>`;
+      : `<span class="muted">Sem comprovativo de receção</span>`;
   }
 }
 
@@ -1755,9 +1755,9 @@ async function handleWorksInteraction(event) {
     const materialKey = materialItem.dataset.materialKey;
     if (!workId || (!materialId && !materialKey)) return;
 
-    if (button.classList.contains("upload-material-document-btn")) {
-      const input = materialItem.querySelector(".material-document-file");
-      const cameraInput = materialItem.querySelector(".material-camera-file");
+    if (button.classList.contains("upload-material-order-note-btn")) {
+      const input = materialItem.querySelector(".material-order-note-file");
+      const cameraInput = materialItem.querySelector(".material-order-note-camera");
       const file = input?.files?.[0] || cameraInput?.files?.[0];
       if (!materialId) { window.alert("Guarda primeiro o material antes de anexar."); return; }
       if (!file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
@@ -1765,7 +1765,25 @@ async function handleWorksInteraction(event) {
       formData.append("file", file);
       button.disabled = true;
       try {
-        await api(`/api/works/${workId}/materials/item/${materialId}/upload`, { method: "POST", body: formData });
+        await api(`/api/works/${workId}/materials/item/${materialId}/order-note-pdf`, { method: "POST", body: formData });
+        await refreshWorksView({ workId, detailTab: "materials" });
+        await loadLogs();
+      } catch (error) { window.alert(error.message); }
+      finally { button.disabled = false; }
+      return;
+    }
+
+    if (button.classList.contains("upload-material-receipt-btn")) {
+      const input = materialItem.querySelector(".material-invoice-file");
+      const cameraInput = materialItem.querySelector(".material-invoice-camera");
+      const file = input?.files?.[0] || cameraInput?.files?.[0];
+      if (!materialId) { window.alert("Guarda primeiro o material antes de anexar."); return; }
+      if (!file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
+      const formData = new FormData();
+      formData.append("file", file);
+      button.disabled = true;
+      try {
+        await api(`/api/works/${workId}/materials/item/${materialId}/invoice-photo`, { method: "POST", body: formData });
         await refreshWorksView({ workId, detailTab: "materials" });
         await loadLogs();
       } catch (error) { window.alert(error.message); }
@@ -1963,103 +1981,6 @@ async function handleMaterialCheckboxChange(event) {
   } finally {
     orderedInput.disabled = false;
     arrivedInput.disabled = false;
-  }
-}
-
-async function handleMaterialOrderNoteFileChange(event) {
-  const input = event.target.closest(".material-order-note-file");
-  if (!input) return;
-
-  const materialItem = input.closest(".material-item");
-  const workId = materialItem?.dataset.workId;
-  const materialId = materialItem?.dataset.materialId;
-  const file = input.files?.[0];
-  if (!materialItem || !workId || !materialId) return;
-  if (!file) {
-    pendingMaterialOrder = { workId: null, materialId: null };
-    return;
-  }
-  if (file.type !== "application/pdf") {
-    window.alert("A nota de encomenda tem de ser um PDF.");
-    input.value = "";
-    pendingMaterialOrder = { workId: null, materialId: null };
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("pdf", file);
-  input.disabled = true;
-
-  try {
-    await api(`/api/works/${workId}/materials/item/${materialId}/order-note-pdf`, {
-      method: "POST",
-      body: formData
-    });
-
-    if (pendingMaterialOrder.workId === workId && pendingMaterialOrder.materialId === materialId) {
-      await api(`/api/works/${workId}/materials/item/${materialId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ ordered: true })
-      });
-    }
-
-    await refreshWorksView({ workId, detailTab: "materials" });
-    await loadLogs();
-  } catch (error) {
-    window.alert(error.message);
-  } finally {
-    pendingMaterialOrder = { workId: null, materialId: null };
-    input.disabled = false;
-    input.value = "";
-  }
-}
-
-async function handleMaterialInvoiceFileChange(event) {
-  const input = event.target.closest(".material-invoice-file");
-  if (!input) return;
-
-  const materialItem = input.closest(".material-item");
-  const workItem = input.closest(".work-item");
-  const workId = materialItem?.dataset.workId;
-  const materialId = materialItem?.dataset.materialId;
-  const file = input.files?.[0];
-  if (!materialItem || !workItem || !workId || !materialId) return;
-  if (!file) {
-    pendingMaterialReceipt = { workId: null, materialId: null };
-    return;
-  }
-  if (!String(file.type || "").startsWith("image/")) {
-    window.alert("So sao permitidas imagens para a fatura.");
-    input.value = "";
-    pendingMaterialReceipt = { workId: null, materialId: null };
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append("invoice_photo", file);
-  input.disabled = true;
-
-  try {
-    await api(`/api/works/${workId}/materials/item/${materialId}/invoice-photo`, {
-      method: "POST",
-      body: formData
-    });
-
-    if (pendingMaterialReceipt.workId === workId && pendingMaterialReceipt.materialId === materialId) {
-      await api(`/api/works/${workId}/materials/item/${materialId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ arrived: true })
-      });
-    }
-
-    await refreshWorksView({ workId, detailTab: "materials" });
-    await loadLogs();
-  } catch (error) {
-    window.alert(error.message);
-  } finally {
-    pendingMaterialReceipt = { workId: null, materialId: null };
-    input.disabled = false;
-    input.value = "";
   }
 }
 
@@ -2264,8 +2185,6 @@ function handleProcessDragEnd(event) {
   list.addEventListener("click", handleWorkToggle);
   list.addEventListener("change", handleWorkStatusChange);
   list.addEventListener("click", handleMaterialCheckboxChange);
-  list.addEventListener("change", handleMaterialOrderNoteFileChange);
-  list.addEventListener("change", handleMaterialInvoiceFileChange);
   list.addEventListener("change", handleAttachmentChoiceChange);
   list.addEventListener("click", handleProcessCheckboxChange);
   list.addEventListener("keydown", handleProcessStepInputKeydown);
