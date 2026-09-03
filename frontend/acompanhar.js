@@ -16,6 +16,14 @@ const statusLabels = {
   suspended: "Suspensa"
 };
 
+function formatDateOnly(value) {
+  if (!value) return "";
+  const datePart = String(value).split("T")[0];
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (!match) return datePart;
+  return `${match[3]}/${match[2]}/${match[1]}`;
+}
+
 async function loadTracking() {
   const token = window.location.hash.slice(1).trim();
   if (!/^[a-f0-9]{64}$/i.test(token)) {
@@ -32,7 +40,7 @@ async function loadTracking() {
       <div class="tracking-head">
         <span class="eyebrow">Estado atual · ${escapeHtml(statusLabels[data.status] || data.status)}</span>
         <h1>${escapeHtml(data.title)}</h1>
-        ${data.due_date ? `<p class="muted">Prazo previsto: ${escapeHtml(data.due_date)}</p>` : ""}
+        ${data.due_date ? `<p class="muted">Prazo previsto: ${escapeHtml(formatDateOnly(data.due_date))}</p>` : ""}
       </div>
       <div class="tracking-progress-copy"><strong>${percent}% concluído</strong><span>${data.completed_steps} de ${data.total_steps} etapas</span></div>
       <div class="tracking-progress"><span style="width:${percent}%"></span></div>
