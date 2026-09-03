@@ -333,8 +333,27 @@ function formatMaterialCheckMeta(username, when, actionLabel) {
   return formattedWhen ? `${actionLabel} por ${username} em ${formattedWhen}` : `${actionLabel} por ${username}`;
 }
 
+function renderMaterialAttachmentSummary(material) {
+  const attachments = [
+    { path: material?.order_note_pdf_path, label: "Ver nota" },
+    { path: material?.invoice_photo_path, label: "Ver recebido" },
+    { path: material?.pdf_path, label: "Ver anexo" }
+  ].filter((attachment) => attachment.path);
+
+  if (!attachments.length) {
+    return `<span class="muted material-attachment-summary">Sem anexo</span>`;
+  }
+
+  return `
+    <div class="material-links material-attachment-summary">
+      ${attachments.map((attachment) => `
+        <a class="material-link" href="${escapeHtml(attachment.path)}" target="_blank" rel="noopener noreferrer">${attachment.label}</a>
+      `).join("")}
+    </div>
+  `;
+}
+
 function materialHtml(work, material) {
-  const pdfPath = material.pdf_path || null;
   const ordered = Boolean(material.ordered);
   const arrived = Boolean(material.arrived);
   const invoicePhotoPath = material.invoice_photo_path || null;
@@ -363,16 +382,7 @@ function materialHtml(work, material) {
     <div class="material-item" data-work-id="${work.id}" data-material-id="${material.id || ""}" data-material-key="${material.key || ""}">
       <div class="material-head">
         <h4>${material.label}</h4>
-        ${
-          pdfPath
-            ? `
-              <div class="material-links">
-                <a class="material-link" href="${escapeHtml(pdfPath)}" target="_blank" rel="noopener noreferrer">Ver anexo</a>
-                <a class="material-link" href="${escapeHtml(pdfPath)}" download>Download</a>
-              </div>
-            `
-            : `<span class="muted">Sem anexo</span>`
-        }
+        ${renderMaterialAttachmentSummary(material)}
       </div>
       ${canManageMaterials ? `
       <div class="material-item-tools">
@@ -453,7 +463,6 @@ function updateMaterialItemFromWork(materialItem, work) {
 
   const ordered = Boolean(material.ordered);
   const arrived = Boolean(material.arrived);
-  const pdfPath = material.pdf_path || null;
   const invoicePhotoPath = material.invoice_photo_path || null;
   const orderNotePdfPath = material.order_note_pdf_path || null;
 
@@ -468,9 +477,9 @@ function updateMaterialItemFromWork(materialItem, work) {
     arrivedInput.setAttribute("aria-label", arrived ? "Recebido" : "Marcar como recebido");
   }
 
-  const linksContainer = materialItem.querySelector(".material-head > :last-child");
+  const linksContainer = materialItem.querySelector(".material-attachment-summary");
   if (linksContainer) {
-    linksContainer.outerHTML = renderMaterialLinks(pdfPath);
+    linksContainer.outerHTML = renderMaterialAttachmentSummary(material);
   }
 
   const orderNoteLinksContainer = materialItem.querySelector(".material-order-note-links");
