@@ -269,6 +269,9 @@ async function ensureWorksPublicAccessColumns() {
   if (!names.has("public_access_token_hash")) {
     await query("ALTER TABLE obras ADD COLUMN public_access_token_hash VARCHAR(64) NULL");
   }
+  if (!names.has("public_access_token")) {
+    await query("ALTER TABLE obras ADD COLUMN public_access_token VARCHAR(64) NULL");
+  }
   if (!names.has("public_access_created_at")) {
     await query("ALTER TABLE obras ADD COLUMN public_access_created_at TIMESTAMPTZ NULL");
   }
@@ -754,6 +757,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       ${observationsSelect},
       ${finalAttachmentSelect},
       ${finalAttachmentsSelect},
+      o.public_access_token,
       (o.public_access_token_hash IS NOT NULL) AS public_access_enabled,
       c.id AS client_id,
       c.nome AS client_name,
@@ -866,6 +870,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       final_attachment_path: await resolveFileUrl(obra.final_attachment_path),
       final_attachment_paths: finalAttachmentPaths,
       public_access_enabled: Boolean(obra.public_access_enabled),
+      public_access_token: obra.public_access_token || null,
       status: mapStatusNameToCode(obra.estado_nome),
       due_date: obra.data_fim_prevista || null,
       priority: normalizePriority(obra.prioridade),
@@ -1020,7 +1025,10 @@ app.post("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, re
     const existing = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [id]);
     if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
     const token = crypto.randomBytes(32).toString("hex");
-    await query("UPDATE obras SET public_access_token_hash = ?, public_access_created_at = NOW() WHERE id = ?", [hashPublicAccessToken(token), id]);
+    await query(
+      "UPDATE obras SET public_access_token_hash = ?, public_access_token = ?, public_access_created_at = NOW() WHERE id = ?",
+      [hashPublicAccessToken(token), token, id]
+    );
     const link = `${req.protocol}://${req.get("host")}/acompanhar.html#${token}`;
     await createAuditLog(req, "create_public_link", "work", id, id);
     return res.json({ link });
@@ -1033,7 +1041,7 @@ app.delete("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, 
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    const result = await query("UPDATE obras SET public_access_token_hash = NULL, public_access_created_at = NULL WHERE id = ?", [id]);
+    const result = await query("UPDATE obras SET public_access_token_hash = NULL, public_access_token = NULL, public_access_created_at = NULL WHERE id = ?", [id]);
     if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
     await createAuditLog(req, "revoke_public_link", "work", id, id);
     return res.json({ success: true });

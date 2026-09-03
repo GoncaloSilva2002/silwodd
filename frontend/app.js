@@ -889,6 +889,12 @@ function renderWorks(items, target) {
             <div>
               <strong>Acompanhamento do cliente</strong>
               <p class="muted">Link privado apenas com o progresso e as etapas desta obra.</p>
+              ${w.public_access_token ? `
+                <div class="public-link-copy-row">
+                  <input class="public-link-input" value="${escapeHtml(`${window.location.origin}/acompanhar.html#${w.public_access_token}`)}" readonly aria-label="Link de acompanhamento do cliente" />
+                  <button type="button" class="copy-public-link-btn">Copiar link</button>
+                </div>
+              ` : ""}
             </div>
             <div class="public-link-actions">
               <button type="button" class="create-public-link-btn">${w.public_access_enabled ? "Criar novo link" : "Criar link"}</button>
@@ -1703,6 +1709,19 @@ async function handleWorksInteraction(event) {
       window.alert(error.message);
     } finally {
       button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("copy-public-link-btn")) {
+    const linkInput = workItem?.querySelector(".public-link-input");
+    if (!linkInput) return;
+    try {
+      await navigator.clipboard.writeText(linkInput.value);
+      window.alert("Link copiado.");
+    } catch (_error) {
+      linkInput.select();
+      window.prompt("Copia este link:", linkInput.value);
     }
     return;
   }

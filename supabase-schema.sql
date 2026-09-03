@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS obras (
   observacoes TEXT,
   process_steps_configured BOOLEAN NOT NULL DEFAULT FALSE,
   public_access_token_hash VARCHAR(64),
+  public_access_token VARCHAR(64),
   public_access_created_at TIMESTAMPTZ,
   final_attachment_path VARCHAR(255),
   final_attachment_paths TEXT,

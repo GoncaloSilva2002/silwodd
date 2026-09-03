@@ -511,6 +511,21 @@ button:active {
   width: auto;
 }
 
+.public-link-copy-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.public-link-input {
+  min-width: 0;
+}
+
+.public-link-copy-row button {
+  width: auto;
+}
+
 .revoke-public-link-btn {
   background: #eeece3;
   color: var(--text);
@@ -1895,6 +1910,14 @@ body.role-funcionario .process-item-tools {
   }
 
   .secondary-btn {
+    width: 100%;
+  }
+
+  .public-link-copy-row {
+    grid-template-columns: 1fr;
+  }
+
+  .public-link-copy-row button {
     width: 100%;
   }
 
