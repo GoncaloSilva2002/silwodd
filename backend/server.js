@@ -38,23 +38,28 @@ const materialNameToKey = new Map(defaultMaterials.map((material) => [material.l
 const defaultProcessSteps = [
   { key: "kitchen_design", label: "Desenho da cozinha" },
   { key: "cutting", label: "Corte" },
+  { key: "edging", label: "Orlar" },
   { key: "cnc", label: "CNC" },
-  { key: "assembly", label: "Montagem" },
+  { key: "assembly", label: "Montagem na fábrica" },
   { key: "painting", label: "Pintura" },
   { key: "loaded", label: "Carregar" },
   { key: "unloaded", label: "Descarregar" },
-  { key: "installation_start", label: "Inicio de montagem" },
-  { key: "installation_end", label: "Fim de montagem" }
+  { key: "installation_start", label: "Início de montagem em obra" },
+  { key: "installation_end", label: "Fim de montagem em obra" }
 ];
 const processStepMap = Object.fromEntries(defaultProcessSteps.map((step) => [step.key, step.label]));
 const processStepOrder = defaultProcessSteps.map((step) => step.key);
 const processStepKeys = new Set(Object.keys(processStepMap));
 const processStepNameToKey = new Map(defaultProcessSteps.map((step) => [step.label, step.key]));
+processStepNameToKey.set("Montagem", "assembly");
+processStepNameToKey.set("Inicio de montagem", "installation_start");
+processStepNameToKey.set("Fim de montagem", "installation_end");
 const schemaInfo = {
   obrasDueDateColumn: null,
   obrasPriorityColumn: null,
   obrasObservationsColumn: null,
   obrasFinalAttachmentColumn: null,
+  obrasFinalAttachmentsColumn: null,
   clientesNifColumn: null,
   clientesAddressColumn: null,
   obrasProcessConfiguredColumn: null
@@ -206,6 +211,7 @@ async function loadSchemaInfo() {
   const observationsCandidates = ["observacoes", "observacoes_obra", "notes"];
   schemaInfo.obrasObservationsColumn = observationsCandidates.find((name) => names.has(name)) || null;
   schemaInfo.obrasFinalAttachmentColumn = names.has("final_attachment_path") ? "final_attachment_path" : null;
+  schemaInfo.obrasFinalAttachmentsColumn = names.has("final_attachment_paths") ? "final_attachment_paths" : null;
   const processConfiguredCandidates = ["process_steps_configured", "etapas_configuradas"];
   schemaInfo.obrasProcessConfiguredColumn = processConfiguredCandidates.find((name) => names.has(name)) || null;
 
@@ -273,6 +279,9 @@ async function ensureWorksFinalAttachmentColumn() {
   const columns = await query("SELECT column_name AS \"Field\" FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'obras'");
   if (!columns.some((column) => String(column.Field) === "final_attachment_path")) {
     await query("ALTER TABLE obras ADD COLUMN final_attachment_path VARCHAR(255) NULL");
+  }
+  if (!columns.some((column) => String(column.Field) === "final_attachment_paths")) {
+    await query("ALTER TABLE obras ADD COLUMN final_attachment_paths TEXT NULL");
   }
 }
 
@@ -389,6 +398,7 @@ async function ensureProcessStepsTable() {
       id_obra BIGINT NOT NULL REFERENCES obras(id) ON DELETE CASCADE,
       nome_etapa VARCHAR(120) NOT NULL,
       pdf_path VARCHAR(255) NULL,
+      attachment_paths TEXT NULL,
       concluida BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
@@ -400,6 +410,10 @@ async function ensureProcessStepsTable() {
   const hasPdfPath = columns.some((column) => String(column.Field) === "pdf_path");
   if (!hasPdfPath) {
     await query("ALTER TABLE obra_etapas ADD COLUMN pdf_path VARCHAR(255) NULL");
+  }
+  const hasAttachmentPaths = columns.some((column) => String(column.Field) === "attachment_paths");
+  if (!hasAttachmentPaths) {
+    await query("ALTER TABLE obra_etapas ADD COLUMN attachment_paths TEXT NULL");
   }
   const hasOrderIndex = columns.some((column) => String(column.Field) === "order_index");
   if (!hasOrderIndex) {
@@ -430,7 +444,7 @@ function getProcessStepKeyByName(stepName) {
 async function getOrderedProcessSteps(workId) {
   return query(
     `
-      SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index, checked_by_user_id, checked_by_username, checked_at
+      SELECT id, id_obra, nome_etapa, concluida, pdf_path, attachment_paths, order_index, checked_by_user_id, checked_by_username, checked_at
       FROM obra_etapas
       WHERE id_obra = ?
       ORDER BY order_index ASC, id ASC
@@ -490,6 +504,44 @@ async function initializeProcessStepsForExistingWorks() {
       continue;
     }
     await ensureDefaultProcessStepsForWork(work.id);
+  }
+}
+
+async function migrateProcessStepNamesAndAddEdging() {
+  const renames = [
+    ["Montagem", "Montagem na fábrica"],
+    ["Inicio de montagem", "Início de montagem em obra"],
+    ["Fim de montagem", "Fim de montagem em obra"]
+  ];
+  for (const [oldName, newName] of renames) {
+    await query("UPDATE obra_etapas SET nome_etapa = ? WHERE nome_etapa = ?", [newName, oldName]);
+  }
+
+  const works = await query("SELECT id FROM obras");
+  for (const work of works) {
+    let steps = await getOrderedProcessSteps(work.id);
+    const existingNames = new Set(steps.map((step) => step.nome_etapa));
+    for (const defaultStep of defaultProcessSteps) {
+      if (existingNames.has(defaultStep.label)) continue;
+      const nextId = await getNextTableId("obra_etapas");
+      await query(
+        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, FALSE, ?)",
+        [nextId, work.id, defaultStep.label, steps.length]
+      );
+      existingNames.add(defaultStep.label);
+      steps.push({ id: nextId, nome_etapa: defaultStep.label });
+    }
+
+    steps = await getOrderedProcessSteps(work.id);
+    const defaultNames = new Set(defaultProcessSteps.map((step) => step.label));
+    const byName = new Map(steps.map((step) => [step.nome_etapa, step]));
+    const orderedSteps = [
+      ...defaultProcessSteps.map((step) => byName.get(step.label)).filter(Boolean),
+      ...steps.filter((step) => !defaultNames.has(step.nome_etapa))
+    ];
+    for (const [index, step] of orderedSteps.entries()) {
+      await query("UPDATE obra_etapas SET order_index = ? WHERE id = ?", [index, step.id]);
+    }
   }
 }
 
@@ -688,6 +740,9 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   const finalAttachmentSelect = schemaInfo.obrasFinalAttachmentColumn
     ? `o.${schemaInfo.obrasFinalAttachmentColumn} AS final_attachment_path`
     : "NULL AS final_attachment_path";
+  const finalAttachmentsSelect = schemaInfo.obrasFinalAttachmentsColumn
+    ? `o.${schemaInfo.obrasFinalAttachmentsColumn} AS final_attachment_paths`
+    : "NULL AS final_attachment_paths";
 
   let sql = `
     SELECT
@@ -698,6 +753,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       ${prioritySelect},
       ${observationsSelect},
       ${finalAttachmentSelect},
+      ${finalAttachmentsSelect},
       (o.public_access_token_hash IS NOT NULL) AS public_access_enabled,
       c.id AS client_id,
       c.nome AS client_name,
@@ -759,7 +815,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   try {
     processSteps = await query(
       `
-        SELECT id, id_obra, nome_etapa, concluida, pdf_path, order_index
+        SELECT id, id_obra, nome_etapa, concluida, pdf_path, attachment_paths, order_index
              , checked_by_user_id, checked_by_username, checked_at
         FROM obra_etapas
         WHERE id_obra IN (${placeholdersObras})
@@ -791,12 +847,24 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   };
 
   return Promise.all(obras.map(async (obra) => {
+    let storedFinalAttachments = [];
+    try {
+      const parsed = JSON.parse(obra.final_attachment_paths || "[]");
+      if (Array.isArray(parsed)) storedFinalAttachments = parsed.filter(Boolean);
+    } catch (_error) {
+      storedFinalAttachments = [];
+    }
+    if (obra.final_attachment_path && !storedFinalAttachments.includes(obra.final_attachment_path)) {
+      storedFinalAttachments.unshift(obra.final_attachment_path);
+    }
+    const finalAttachmentPaths = await Promise.all(storedFinalAttachments.map(resolveFileUrl));
     const item = {
       id: obra.id,
       title: obra.nome_obra,
       description: obra.descricao || "",
       observations: obra.observacoes || "",
       final_attachment_path: await resolveFileUrl(obra.final_attachment_path),
+      final_attachment_paths: finalAttachmentPaths,
       public_access_enabled: Boolean(obra.public_access_enabled),
       status: mapStatusNameToCode(obra.estado_nome),
       due_date: obra.data_fim_prevista || null,
@@ -847,7 +915,15 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
         done: Number(Boolean(step.concluida)),
         pdf_path: await resolveFileUrl(step.pdf_path),
         order_index: Number(step.order_index) || 0,
-        can_upload_pdf: key === "kitchen_design",
+        attachment_paths: await Promise.all((() => {
+          try {
+            const parsed = JSON.parse(step.attachment_paths || "[]");
+            return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+          } catch (_error) {
+            return [];
+          }
+        })().map(resolveFileUrl)),
+        can_upload_pdf: key === "kitchen_design" || key === "assembly",
         checked_by_user_id: step.checked_by_user_id || null,
         checked_by_username: step.checked_by_username || null,
         checked_at: step.checked_at || null
@@ -1510,39 +1586,50 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
   const id = Number(req.params.id);
   const { stepKey } = req.params;
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-  if (stepKey !== "kitchen_design") {
-    return res.status(400).json({ error: "Apenas a etapa Desenho da cozinha permite PDF." });
+  if (stepKey !== "kitchen_design" && stepKey !== "assembly") {
+    return res.status(400).json({ error: "Esta etapa nao permite anexos." });
   }
 
-  documentUpload.single("file")(req, res, async (error) => {
+  documentUpload.array("files", 20)(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
-    if (!req.file) return res.status(400).json({ error: "Seleciona um PDF ou uma imagem." });
+    if (!req.files?.length) return res.status(400).json({ error: "Seleciona pelo menos um PDF ou uma imagem." });
 
     try {
       const stepName = processStepMap[stepKey];
-      const publicPath = await uploadFile(req.file, `works/${id}/process/${stepKey}`);
       const existing = await query(
-        "SELECT id FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
+        "SELECT id, pdf_path, attachment_paths FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
         [id, stepName]
       );
 
       if (existing[0]) {
-        await query("UPDATE obra_etapas SET pdf_path = ? WHERE id = ?", [publicPath, existing[0].id]);
+        let storedPaths = [];
+        try {
+          const parsed = JSON.parse(existing[0].attachment_paths || "[]");
+          if (Array.isArray(parsed)) storedPaths = parsed.filter(Boolean);
+        } catch (_error) {
+          storedPaths = [];
+        }
+        if (existing[0].pdf_path && !storedPaths.includes(existing[0].pdf_path)) storedPaths.unshift(existing[0].pdf_path);
+        const newPaths = await Promise.all(req.files.map((file) => uploadFile(file, `works/${id}/process/${stepKey}`)));
+        storedPaths.push(...newPaths);
+        await query("UPDATE obra_etapas SET pdf_path = ?, attachment_paths = ? WHERE id = ?", [newPaths[newPaths.length - 1], JSON.stringify(storedPaths), existing[0].id]);
+        existing[0].newPaths = newPaths;
       } else {
+        const newPaths = await Promise.all(req.files.map((file) => uploadFile(file, `works/${id}/process/${stepKey}`)));
         const nextProcessStepId = await getNextTableId("obra_etapas");
         const orderedSteps = await getOrderedProcessSteps(id);
         await query(
-          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path, order_index) VALUES (?, ?, ?, FALSE, ?, ?)",
-          [nextProcessStepId, id, stepName, publicPath, orderedSteps.length]
+          "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, pdf_path, attachment_paths, order_index) VALUES (?, ?, ?, FALSE, ?, ?, ?)",
+          [nextProcessStepId, id, stepName, newPaths[newPaths.length - 1], JSON.stringify(newPaths), orderedSteps.length]
         );
-        existing[0] = { id: nextProcessStepId };
+        existing[0] = { id: nextProcessStepId, newPaths };
       }
 
       const rows = await getWorks(null);
       const work = rows.find((item) => item.id === id);
       await createAuditLog(req, "upload_process_pdf", "process_step", existing[0]?.id || null, id, {
         step_key: stepKey,
-        pdf_path: publicPath
+        file_paths: existing[0].newPaths
       });
       return res.json(work || null);
     } catch (_err) {
@@ -1665,16 +1752,30 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
 app.post("/api/works/:id/final-attachment", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-  documentUpload.single("file")(req, res, async (error) => {
+  documentUpload.array("files", 20)(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
-    if (!req.file) return res.status(400).json({ error: "Seleciona um PDF ou uma imagem." });
+    if (!req.files?.length) return res.status(400).json({ error: "Seleciona pelo menos um PDF ou uma imagem." });
     try {
-      const existing = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [id]);
+      const existing = await query("SELECT id, final_attachment_path, final_attachment_paths FROM obras WHERE id = ? LIMIT 1", [id]);
       if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
-      const storedPath = await uploadFile(req.file, `works/${id}/final`);
-      await query("UPDATE obras SET final_attachment_path = ? WHERE id = ?", [storedPath, id]);
+      let storedPaths = [];
+      try {
+        const parsed = JSON.parse(existing[0].final_attachment_paths || "[]");
+        if (Array.isArray(parsed)) storedPaths = parsed.filter(Boolean);
+      } catch (_error) {
+        storedPaths = [];
+      }
+      if (existing[0].final_attachment_path && !storedPaths.includes(existing[0].final_attachment_path)) {
+        storedPaths.unshift(existing[0].final_attachment_path);
+      }
+      const newPaths = await Promise.all(req.files.map((file) => uploadFile(file, `works/${id}/final`)));
+      storedPaths.push(...newPaths);
+      await query(
+        "UPDATE obras SET final_attachment_path = ?, final_attachment_paths = ? WHERE id = ?",
+        [newPaths[newPaths.length - 1], JSON.stringify(storedPaths), id]
+      );
       const rows = await getWorks(null);
-      await createAuditLog(req, "upload_final_attachment", "work", id, id, { file_path: storedPath });
+      await createAuditLog(req, "upload_final_attachment", "work", id, id, { file_paths: newPaths });
       return res.json(rows.find((item) => item.id === id) || null);
     } catch (uploadError) {
       return res.status(500).json({ error: uploadError?.message || "Erro ao guardar anexo final." });
@@ -1999,6 +2100,7 @@ async function start() {
     await ensureWorksPublicAccessColumns();
     await ensureWorksFinalAttachmentColumn();
     await ensureMaterialsExtraColumns();
+    await migrateProcessStepNamesAndAddEdging();
     await initializeMaterialsForExistingWorks();
     await initializeProcessStepsForExistingWorks();
     await loadSchemaInfo();

@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS obras (
   public_access_token_hash VARCHAR(64),
   public_access_created_at TIMESTAMPTZ,
   final_attachment_path VARCHAR(255),
+  final_attachment_paths TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT obras_prioridade_check CHECK (prioridade IN ('low', 'medium', 'high'))
 );
@@ -79,6 +80,7 @@ CREATE TABLE IF NOT EXISTS obra_etapas (
   id_obra BIGINT NOT NULL REFERENCES obras(id) ON DELETE CASCADE,
   nome_etapa VARCHAR(120) NOT NULL,
   pdf_path VARCHAR(255),
+  attachment_paths TEXT,
   concluida BOOLEAN NOT NULL DEFAULT FALSE,
   order_index INTEGER NOT NULL DEFAULT 0,
   checked_by_user_id BIGINT,

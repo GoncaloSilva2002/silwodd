@@ -67,13 +67,14 @@ const defaultMaterialTypes = [
 const defaultProcessSteps = [
   { key: "kitchen_design", label: "Desenho da cozinha" },
   { key: "cutting", label: "Corte" },
+  { key: "edging", label: "Orlar" },
   { key: "cnc", label: "CNC" },
-  { key: "assembly", label: "Montagem" },
+  { key: "assembly", label: "Montagem na fábrica" },
   { key: "painting", label: "Pintura" },
   { key: "loaded", label: "Carregar" },
   { key: "unloaded", label: "Descarregar" },
-  { key: "installation_start", label: "Inicio de montagem" },
-  { key: "installation_end", label: "Fim de montagem" }
+  { key: "installation_start", label: "Início de montagem em obra" },
+  { key: "installation_end", label: "Fim de montagem em obra" }
 ];
 const processStepIcons = {
   kitchen_design: `
@@ -89,6 +90,11 @@ const processStepIcons = {
   cnc: `
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path d="M4 6h16v12H4zm3 3v6h10V9zm4-5h2v3h-2z" fill="currentColor"></path>
+    </svg>
+  `,
+  edging: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h12v3H7v11H4zm6 6h10v8H10zm2 2v4h6v-4z" fill="currentColor"></path>
     </svg>
   `,
   assembly: `
@@ -249,7 +255,7 @@ function getSuccessMessage(path, method) {
   if (path.endsWith("/process") && verb === "POST") return "Etapa adicionada com sucesso.";
   if (path.includes("/process/") && verb === "POST") return "Anexo da etapa guardado com sucesso.";
   if (path.includes("/process/") && verb === "PATCH") return "Etapa atualizada com sucesso.";
-  if (path.endsWith("/final-attachment") && verb === "POST") return "Anexo final guardado com sucesso.";
+  if (path.endsWith("/final-attachment") && verb === "POST") return "Anexos finais guardados com sucesso.";
   if (path.endsWith("/status") && verb === "PATCH") return "Estado da obra atualizado.";
   if (path.endsWith("/priority") && verb === "PATCH") return "Prioridade atualizada.";
   if (path.endsWith("/observations") && verb === "PATCH") return "Observações guardadas.";
@@ -451,6 +457,28 @@ function renderFinalAttachmentPreview(path) {
   return `<a class="material-link" href="${safePath}" target="_blank" rel="noopener noreferrer">Ver anexo final da obra</a>`;
 }
 
+function renderProcessAttachmentLinks(step) {
+  const paths = Array.isArray(step?.attachment_paths) && step.attachment_paths.length
+    ? step.attachment_paths
+    : (step?.pdf_path ? [step.pdf_path] : []);
+  if (!paths.length) return `<span class="muted">Sem anexo</span>`;
+  return `
+    <div class="material-links">
+      ${paths.map((path, index) => `
+        <a class="material-link" href="${escapeHtml(path)}" target="_blank" rel="noopener noreferrer">Ver anexo ${index + 1}</a>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderFinalAttachments(work) {
+  const paths = Array.isArray(work?.final_attachment_paths) && work.final_attachment_paths.length
+    ? work.final_attachment_paths
+    : (work?.final_attachment_path ? [work.final_attachment_path] : []);
+  if (!paths.length) return "";
+  return `<div class="final-attachment-gallery">${paths.map(renderFinalAttachmentPreview).join("")}</div>`;
+}
+
 function updateMaterialItemFromWork(materialItem, work) {
   if (!materialItem || !work) return;
   const materialId = Number(materialItem.dataset.materialId);
@@ -515,6 +543,7 @@ function getWorkProcessSteps(work) {
       label: step.label,
       done: Boolean(step.done),
       pdf_path: step.pdf_path || null,
+      attachment_paths: Array.isArray(step.attachment_paths) ? step.attachment_paths : [],
       can_upload_pdf: Boolean(step.can_upload_pdf),
       order_index: Number(step.order_index ?? index),
       checked_by_username: step.checked_by_username || null,
@@ -528,7 +557,8 @@ function getWorkProcessSteps(work) {
     label: step.label,
     done: Boolean(work?.[`${step.key}_done`]),
     pdf_path: work?.[`${step.key}_pdf_path`] || null,
-    can_upload_pdf: step.key === "kitchen_design",
+    attachment_paths: work?.[`${step.key}_pdf_path`] ? [work[`${step.key}_pdf_path`]] : [],
+    can_upload_pdf: step.key === "kitchen_design" || step.key === "assembly",
     order_index: index,
     checked_by_username: null,
     checked_at: null
@@ -546,7 +576,6 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
   const previousStep = stepIndex > 0 ? steps[stepIndex - 1] : null;
   const previousDone = previousStep ? Boolean(previousStep.done) : true;
   const done = Boolean(step.done);
-  const pdfPath = step.pdf_path || null;
   const blockedByOrder = !previousDone && !done;
   const canUploadPdf = Boolean(step.can_upload_pdf);
   const checkMeta = formatProcessCheckMeta(step);
@@ -555,11 +584,11 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
   const pdfHtml = canUploadPdf
     ? `
       <div class="process-pdf-links">
-        ${renderMaterialLinks(pdfPath)}
+        ${renderProcessAttachmentLinks(step)}
       </div>
       <div class="material-actions">
         <div class="attachment-choice">
-          <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="process-file hidden" accept="application/pdf,image/*" /></label>
+          <label class="attachment-choice-btn">Escolher ficheiros<input type="file" class="process-file hidden" accept="application/pdf,image/*" multiple /></label>
           <label class="attachment-choice-btn">Tirar foto<input type="file" class="process-camera-file hidden" accept="image/*" capture="environment" /></label>
         </div>
         <button type="button" class="upload-process-btn">Anexar</button>
@@ -587,11 +616,11 @@ function processStepHtml(work, step, stepIndex, totalSteps) {
       ${pdfHtml}
       ${isFinalStep ? `
         <div class="final-step-upload">
-          <label><strong>Anexo de fim da obra</strong></label>
-          <p class="muted">Anexa aqui a fotografia final ou um ficheiro PDF.</p>
+          <label><strong>Anexos de fim da obra</strong></label>
+          <p class="muted">Podes anexar várias fotografias finais ou ficheiros PDF.</p>
           <div class="material-actions">
             <div class="attachment-choice">
-              <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="final-attachment-file hidden" accept="application/pdf,image/*" /></label>
+              <label class="attachment-choice-btn">Escolher ficheiros<input type="file" class="final-attachment-file hidden" accept="application/pdf,image/*" multiple /></label>
               <label class="attachment-choice-btn">Tirar foto<input type="file" class="final-camera-file hidden" accept="image/*" capture="environment" /></label>
             </div>
             <button type="button" class="upload-final-attachment-btn">Anexar</button>
@@ -638,9 +667,8 @@ function updateProcessItemFromWork(processItem, work) {
 
   if (step.can_upload_pdf) {
     const linksWrapper = processItem.querySelector(".process-pdf-links");
-    const pdfPath = step.pdf_path || null;
     if (linksWrapper) {
-      linksWrapper.innerHTML = renderMaterialLinks(pdfPath);
+      linksWrapper.innerHTML = renderProcessAttachmentLinks(step);
     }
     const fileInput = processItem.querySelector(".process-file");
     if (fileInput) fileInput.value = "";
@@ -831,7 +859,7 @@ function renderWorks(items, target) {
           </span>
         </button>
         <div class="work-details hidden">
-          ${w.final_attachment_path ? `<div class="final-attachment-preview">${renderFinalAttachmentPreview(w.final_attachment_path)}</div>` : ""}
+          ${renderFinalAttachments(w) ? `<div class="final-attachment-preview">${renderFinalAttachments(w)}</div>` : ""}
           <div class="work-config-row">
             <div class="material-actions">
               <label><strong>Estado da obra</strong></label>
@@ -1645,10 +1673,10 @@ async function handleWorksInteraction(event) {
   if (button.classList.contains("upload-final-attachment-btn")) {
     const input = workItem?.querySelector(".final-attachment-file");
     const cameraInput = workItem?.querySelector(".final-camera-file");
-    const file = input?.files?.[0] || cameraInput?.files?.[0];
-    if (!workItem || !file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
+    const files = input?.files?.length ? Array.from(input.files) : Array.from(cameraInput?.files || []);
+    if (!workItem || !files.length) { window.alert("Seleciona um ou mais PDFs ou imagens."); return; }
     const formData = new FormData();
-    formData.append("file", file);
+    files.forEach((file) => formData.append("files", file));
     button.disabled = true;
     try {
       await api(`/api/works/${workItem.dataset.workId}/final-attachment`, { method: "POST", body: formData });
@@ -1850,19 +1878,19 @@ async function handleWorksInteraction(event) {
     const stepKey = processItem.dataset.stepKey;
     const input = processItem.querySelector(".process-file");
     const cameraInput = processItem.querySelector(".process-camera-file");
-    const file = input?.files?.[0] || cameraInput?.files?.[0];
+    const files = input?.files?.length ? Array.from(input.files) : Array.from(cameraInput?.files || []);
     if (!workId || !stepKey) return;
-    if (!file) {
-      window.alert("Seleciona um PDF ou uma imagem.");
+    if (!files.length) {
+      window.alert("Seleciona um ou mais PDFs ou imagens.");
       return;
     }
-    if (file.type !== "application/pdf" && !String(file.type || "").startsWith("image/")) {
+    if (files.some((file) => file.type !== "application/pdf" && !String(file.type || "").startsWith("image/"))) {
       window.alert("Só são permitidos ficheiros PDF ou imagens.");
       return;
     }
 
     const formData = new FormData();
-    formData.append("file", file);
+    files.forEach((file) => formData.append("files", file));
     button.disabled = true;
     try {
       const updatedWork = await api(`/api/works/${workId}/process/${stepKey}/upload`, {
