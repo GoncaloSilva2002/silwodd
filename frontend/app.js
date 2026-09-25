@@ -201,9 +201,26 @@ const aspiracaoReload = document.getElementById("aspiracao-reload");
 const aspiracaoFrame = document.getElementById("aspiracao-frame");
 if (aspiracaoReload && aspiracaoFrame) {
   aspiracaoReload.addEventListener("click", () => {
-    aspiracaoFrame.src = aspiracaoFrame.src;
+    aspiracaoFrame.src = "";
+    delete aspiracaoFrame.dataset.loaded;
+    loadAspiracaoPanel();
   });
 }
+
+async function loadAspiracaoPanel() {
+  if (!aspiracaoFrame || aspiracaoFrame.dataset.loaded === "true") return;
+  try {
+    const result = await api("/api/aspiracao/ticket", { successMessage: false });
+    if (!result?.ticket) return;
+    aspiracaoFrame.src = `/aspiracao-proxy/logo_login.shtm?!App-Language=1&ticket=${encodeURIComponent(result.ticket)}`;
+    aspiracaoFrame.dataset.loaded = "true";
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+const aspiracaoTab = document.querySelector('[data-tab="aspiracao"]');
+if (aspiracaoTab) aspiracaoTab.addEventListener("click", loadAspiracaoPanel);
 
 function setMobileMenu(open) {
   document.body.classList.toggle("mobile-menu-open", open);
