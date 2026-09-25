@@ -13,7 +13,7 @@ const { query, initDb } = require("./db");
 const { uploadFile, getFileUrl } = require("./storage");
 const { requireAuth } = require("./middleware/auth");
 const { createChatRouter, initChat } = require("./chat");
-const { createNotificationsRouter, initNotifications } = require("./notifications");
+const { createNotificationsRouter, initNotifications, removeExpiredNotifications } = require("./notifications");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -2107,6 +2107,7 @@ async function start() {
     await ensureAuditLogsTable();
     await ensureWorksPriorityColumn();
     await initNotifications(query);
+    await removeExpiredNotifications(query);
     await ensureWorksObservationsColumn();
     await ensureClientsNifColumn();
     await ensureClientsAddressColumn();

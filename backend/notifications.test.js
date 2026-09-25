@@ -10,6 +10,7 @@ test("notifications are private, paginated and acknowledged only by their owner"
   const records = Array.from({ length: 55 }, (_, i) => ({ id: i + 1, user_id: 1, seen: false, title: `Notice ${i}` }));
   records.push({ id: 56, user_id: 2, seen: false, title: "Private message" });
   const query = async (sql, params) => {
+    if (sql.startsWith("DELETE FROM app_notifications")) return [];
     if (sql.startsWith("SELECT id FROM funcionarios")) return [1, 2, 3].includes(params[0]) ? [{ id: params[0] }] : [];
     if (sql.startsWith("SELECT * FROM app_notifications")) return records.filter((n) => n.user_id === params[0] && (!params[1] || n.id < Number(params[1]))).sort((a, b) => b.id - a.id).slice(0, 50);
     if (sql.startsWith("SELECT COUNT")) return [{ total: records.filter((n) => n.user_id === params[0] && !n.seen).length }];

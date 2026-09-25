@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS app_notifications (
 -- statement-break
 CREATE INDEX IF NOT EXISTS app_notifications_user ON app_notifications(user_id, id DESC);
 -- statement-break
+CREATE INDEX IF NOT EXISTS app_notifications_created_at ON app_notifications(created_at);
+-- statement-break
 ALTER TABLE app_notifications ENABLE ROW LEVEL SECURITY;
 -- statement-break
 CREATE OR REPLACE FUNCTION notify_chat_recipient() RETURNS TRIGGER LANGUAGE plpgsql AS $$

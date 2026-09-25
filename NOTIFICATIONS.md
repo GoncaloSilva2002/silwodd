@@ -2,6 +2,8 @@
 
 O separador Notificações apresenta avisos persistentes e um contador por utilizador. A app verifica novidades a cada 15 segundos enquanto a página está visível, em qualquer separador, e volta a verificar quando regressas à página. Em telemóveis, o botão do menu também mostra um ponto quando há avisos por consultar. Não são notificações do sistema operativo: é necessário ter a app aberta.
 
+As notificações com mais de 3 dias são eliminadas automaticamente. A limpeza acontece no arranque do backend e antes de cada consulta à lista; não é necessário configurar um cron externo.
+
 - Mensagens e anexos novos: aviso apenas ao outro participante, nunca a administradores alheios à conversa.
 - Prioridade das obras: aviso a todos os utilizadores quando o valor realmente muda, com a prioridade anterior e a nova. Guardar o mesmo valor não cria aviso.
 - Abrir um aviso ou selecionar “Marcar como vista” atualiza apenas o estado pessoal da notificação. Não existe confirmação de leitura da mensagem para o remetente.

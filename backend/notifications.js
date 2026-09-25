@@ -8,6 +8,10 @@ async function initNotifications(query) {
   }
 }
 
+async function removeExpiredNotifications(query) {
+  await query("DELETE FROM app_notifications WHERE created_at < NOW() - INTERVAL '3 days'");
+}
+
 function createNotificationsRouter(query, requireAuth) {
   const router = express.Router();
   const handle = (callback) => async (req, res) => {
@@ -22,6 +26,7 @@ function createNotificationsRouter(query, requireAuth) {
   };
   router.use(requireAuth);
   router.get("/", handle(async (req, res) => {
+    await removeExpiredNotifications(query);
     const before = req.query.before;
     if (before && (!/^\d+$/.test(before) || !Number.isSafeInteger(Number(before)) || Number(before) <= 0)) {
       return res.status(400).json({ error: "Página inválida." });
@@ -41,4 +46,4 @@ function createNotificationsRouter(query, requireAuth) {
   }));
   return router;
 }
-module.exports = { initNotifications, createNotificationsRouter };
+module.exports = { initNotifications, removeExpiredNotifications, createNotificationsRouter };
