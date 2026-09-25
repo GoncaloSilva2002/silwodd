@@ -173,7 +173,8 @@ function setActiveTab(tab) {
     users: tabUsers,
     chat: document.getElementById("tab-chat"),
     notifications: document.getElementById("tab-notifications"),
-    aspiracao: document.getElementById("tab-aspiracao")
+    aspiracao: document.getElementById("tab-aspiracao"),
+    calendario: document.getElementById("tab-calendario")
   };
 
   Object.entries(sections).forEach(([key, section]) => {
