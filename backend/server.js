@@ -13,6 +13,7 @@ const { query, initDb } = require("./db");
 const { uploadFile, getFileUrl } = require("./storage");
 const { requireAuth } = require("./middleware/auth");
 const { createChatRouter, initChat } = require("./chat");
+const { createNotificationsRouter, initNotifications } = require("./notifications");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -121,6 +122,7 @@ const authLimiter = rateLimit({
 app.use("/api", apiLimiter);
 app.use(express.json({ limit: "1mb" }));
 app.use("/api/chat", createChatRouter(query, requireAuth));
+app.use("/api/notifications", createNotificationsRouter(query, requireAuth));
 app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use("/uploads", express.static(uploadsDir));
 
@@ -2104,6 +2106,7 @@ async function start() {
     await ensureProcessStepsTable();
     await ensureAuditLogsTable();
     await ensureWorksPriorityColumn();
+    await initNotifications(query);
     await ensureWorksObservationsColumn();
     await ensureClientsNifColumn();
     await ensureClientsAddressColumn();

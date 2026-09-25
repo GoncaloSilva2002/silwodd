@@ -182,6 +182,15 @@
     finally { el("older").disabled = false; }
   });
   document.querySelector('[data-tab="chat"]').addEventListener("click", refresh);
+  document.addEventListener("open-chat-conversation", async (event) => {
+    try {
+      const conversations = await api("/api/chat/conversations");
+      const c = conversations?.find((item) => Number(item.id) === Number(event.detail));
+      if (!c) throw new Error("Conversa indisponível.");
+      await select(c);
+      await refresh();
+    } catch (error) { fail(error); }
+  });
   el("file").addEventListener("change", () => {
     el("remove-file").classList.toggle("hidden", !el("file").files.length);
   });
