@@ -14,7 +14,6 @@ const { uploadFile, getFileUrl } = require("./storage");
 const { requireAuth } = require("./middleware/auth");
 const { createChatRouter, initChat } = require("./chat");
 const { createNotificationsRouter, initNotifications, removeExpiredNotifications } = require("./notifications");
-const { createAspiracaoRouter } = require("./aspiracao");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -89,12 +88,7 @@ app.set("trust proxy", 1);
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "same-origin" },
-    contentSecurityPolicy: {
-      directives: {
-        frameSrc: ["'self'", "http://192.168.1.112"]
-      }
-    }
+    crossOriginResourcePolicy: { policy: "same-origin" }
   })
 );
 
@@ -129,8 +123,6 @@ app.use("/api", apiLimiter);
 app.use(express.json({ limit: "1mb" }));
 app.use("/api/chat", createChatRouter(query, requireAuth));
 app.use("/api/notifications", createNotificationsRouter(query, requireAuth));
-app.use("/api/aspiracao", createAspiracaoRouter(requireAuth, jwtSecret));
-app.use("/aspiracao-proxy", createAspiracaoRouter(requireAuth, jwtSecret));
 app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use("/uploads", express.static(uploadsDir));
 
