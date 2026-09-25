@@ -110,7 +110,7 @@ button:active {
 .chat-conversation { display: grid; gap: 5px; text-align: left; margin-bottom: 8px; background: var(--bg); color: var(--text); }
 .chat-conversation.selected { outline: 2px solid var(--primary); outline-offset: -2px; }
 .chat-conversation small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#chat-messages { height: 48vh; min-height: 220px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+#chat-messages { height: 36vh; min-height: 180px; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .chat-message { align-self: flex-start; max-width: 85%; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; overflow-wrap: anywhere; }
 .chat-message.chat-mine { align-self: flex-end; background: #e7efdF; }
 .chat-message small { color: var(--muted); }

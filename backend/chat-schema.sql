@@ -20,3 +20,10 @@ CREATE INDEX IF NOT EXISTS chat_messages_conversation_id ON chat_messages(conver
 -- Access is mediated by the authenticated Node API, never the public Supabase API.
 ALTER TABLE chat_conversations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
+
+CREATE TABLE IF NOT EXISTS chat_attachments (
+  message_id BIGINT PRIMARY KEY REFERENCES chat_messages(id),
+  filename VARCHAR(255) NOT NULL,
+  content BYTEA NOT NULL CHECK (octet_length(content) <= 10485760)
+);
+ALTER TABLE chat_attachments ENABLE ROW LEVEL SECURITY;

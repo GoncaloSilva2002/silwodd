@@ -1,6 +1,7 @@
 const express = require("express");
 const fs = require("fs");
 const path = require("path");
+const multer = require("multer");
 
 async function initChat(query) {
   const statements = fs.readFileSync(path.join(__dirname, "chat-schema.sql"), "utf8").split(";");
@@ -11,6 +12,7 @@ async function initChat(query) {
 
 function createChatRouter(query, requireAuth) {
   const router = express.Router();
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 1, fieldSize: 16000 } }).single("file");
   const id = (value) => /^\d+$/.test(String(value)) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
   const route = (handler) => async (req, res, next) => {
     try { await handler(req, res, next); }
@@ -62,10 +64,40 @@ function createChatRouter(query, requireAuth) {
   router.get("/conversations/:id/messages", route(async (req, res) => {
     const { before, after } = req.query;
     if ((before && !id(before)) || (after && !id(after)) || (before && after)) return res.status(400).json({ error: "Página inválida." });
-    const rows = await query(`SELECT * FROM chat_messages WHERE conversation_id = ?
+    const rows = await query(`SELECT *, (SELECT filename FROM chat_attachments WHERE message_id = chat_messages.id) AS attachment_name FROM chat_messages WHERE conversation_id = ?
       ${before ? "AND id < ?" : after ? "AND id > ?" : ""} ORDER BY id ${after ? "ASC" : "DESC"} LIMIT 100`,
     [req.conversation.id, ...(before || after ? [before || after] : [])]);
     res.json(after ? rows : rows.reverse());
+  }));
+  router.get("/conversations/:id/attachments/:messageId", route(async (req, res) => {
+    if (!id(req.params.messageId)) return res.status(400).json({ error: "Anexo inválido." });
+    const rows = await query(`SELECT a.filename, a.content FROM chat_attachments a
+      JOIN chat_messages m ON m.id = a.message_id WHERE m.conversation_id = ? AND m.id = ?`, [req.conversation.id, req.params.messageId]);
+    if (!rows[0]) return res.status(404).json({ error: "Anexo não encontrado." });
+    res.set("Cache-Control", "private, no-store");
+    res.attachment(rows[0].filename);
+    res.type("application/octet-stream").send(rows[0].content);
+  }));
+  router.post("/conversations/:id/attachments", (req, res, next) => {
+    if (!req.chatParticipant) return res.status(403).json({ error: "Só os participantes podem enviar anexos." });
+    if (req.conversation.user_a == null || req.conversation.user_b == null) return res.status(409).json({ error: "Utilizador indisponível." });
+    upload(req, res, (error) => {
+      if (error) return res.status(400).json({ error: "Envia um ficheiro de cada vez, até 10 MB." });
+      next();
+    });
+  }, route(async (req, res) => {
+    if (!req.file || !req.file.size) return res.status(400).json({ error: "Seleciona um ficheiro não vazio." });
+    const text = typeof req.body.body === "string" ? req.body.body.trim() : "";
+    if (text.length > 4000) return res.status(400).json({ error: "A mensagem pode ter até 4000 caracteres." });
+    const filename = path.basename(req.file.originalname.replace(/\\/g, "/")).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 255) || "ficheiro";
+    // One statement: a failed attachment insert also rolls back its message.
+    const rows = await query(`WITH message AS (
+      INSERT INTO chat_messages (conversation_id, sender_id, sender_name, body) VALUES (?, ?, ?, ?) RETURNING *
+    ), attachment AS (
+      INSERT INTO chat_attachments (message_id, filename, content) SELECT id, ?, ? FROM message RETURNING filename
+    ) SELECT message.*, attachment.filename AS attachment_name FROM message CROSS JOIN attachment`,
+    [req.conversation.id, req.chatUser.id, req.chatUser.username, text || "Anexo", filename, req.file.buffer]);
+    res.status(201).json(rows[0]);
   }));
   router.post("/conversations/:id/messages", route(async (req, res) => {
     if (!req.chatParticipant) return res.status(403).json({ error: "Só os participantes podem enviar mensagens nesta conversa." });

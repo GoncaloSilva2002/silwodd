@@ -39,7 +39,6 @@
 
         <section id="tab-chat" class="hidden">
           <h2>Chat</h2>
-          <p class="muted">As mensagens ficam guardadas. Os administradores podem consultar todas as conversas.</p>
           <p id="chat-status" role="status"></p>
           <div class="chat-layout">
             <aside class="chat-sidebar" aria-label="Conversas">
@@ -58,7 +57,10 @@
               <p id="chat-readonly" class="muted hidden">Consulta do administrador — apenas os participantes podem enviar mensagens.</p>
               <form id="chat-send" class="hidden">
                 <label for="chat-body">Mensagem</label>
-                <textarea id="chat-body" rows="3" maxlength="4000" required placeholder="Escreve uma mensagem..."></textarea>
+                <textarea id="chat-body" rows="3" maxlength="4000" placeholder="Escreve uma mensagem..."></textarea>
+                <label for="chat-file">Anexar imagem ou ficheiro (até 10 MB)</label>
+                <input id="chat-file" type="file" />
+                <button id="chat-remove-file" type="button" class="hidden">Remover anexo</button>
                 <button type="submit">Enviar</button>
               </form>
             </div>

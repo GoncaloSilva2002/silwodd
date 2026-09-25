@@ -1,5 +1,7 @@
 # Chat entre utilizadores
 
+É possível enviar um anexo por mensagem, com ou sem texto, até 10 MB. Imagens, documentos e outros ficheiros são descarregados através de uma rota autenticada com as mesmas permissões da conversa. Os conteúdos são guardados como BYTEA na tabela privada `chat_attachments` do PostgreSQL/Supabase, sem URLs públicas. Este armazenamento conta para o espaço da base de dados e dos backups. Reiniciar o backend cria a tabela automaticamente; em alternativa, executar o `backend/chat-schema.sql` atualizado no SQL Editor. Imagens são descarregadas como os restantes ficheiros, sem pré-visualização automática.
+
 O separador Chat permite iniciar conversas privadas, enviar mensagens de texto e consultar o histórico. As mensagens não têm estado de leitura. Enquanto o separador estiver aberto e a página visível, as conversas e mensagens são atualizadas a cada 6 segundos. O histórico é carregado em páginas de 100 mensagens.
 
 Os administradores podem consultar todas as conversas. Só os participantes podem enviar mensagens. A interface informa os utilizadores sobre o acesso dos administradores. A remoção de uma conta preserva o histórico e impede novos envios nessa conversa.

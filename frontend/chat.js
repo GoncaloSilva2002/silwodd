@@ -23,6 +23,28 @@
       const body = document.createElement("p");
       body.textContent = m.body;
       item.append(meta, body);
+      if (m.attachment_name) {
+        const download = document.createElement("button");
+        download.type = "button";
+        download.textContent = `Descarregar: ${m.attachment_name}`;
+        download.addEventListener("click", async () => {
+          download.disabled = true;
+          try {
+            const response = await fetch(`/api/chat/conversations/${m.conversation_id}/attachments/${m.id}`, { headers: { Authorization: `Bearer ${token}` } });
+            if (!response.ok) throw new Error("Não foi possível descarregar o anexo. Verifica a sessão e tenta novamente.");
+            const url = URL.createObjectURL(await response.blob());
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = m.attachment_name;
+            document.body.append(link);
+            link.click();
+            link.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 60000);
+          } catch (error) { fail(error); }
+          finally { download.disabled = false; }
+        });
+        item.append(download);
+      }
       box.append(item);
     }
     if (!messages.length) box.textContent = "Ainda não há mensagens nesta conversa.";
@@ -32,6 +54,8 @@
   async function select(c) {
     if (current) drafts.set(current.id, el("body").value);
     current = c;
+    el("file").value = "";
+    el("remove-file").classList.add("hidden");
     const revision = ++generation;
     messages = [];
     el("body").value = drafts.get(c.id) || "";
@@ -108,17 +132,32 @@
   });
   el("send").addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (!current || !el("body").value.trim()) return;
+    const file = el("file").files[0];
+    if (!current || (!el("body").value.trim() && !file)) return;
+    if (file && (file.size > 10 * 1024 * 1024 || !file.size)) {
+      fail(new Error("Seleciona um ficheiro não vazio, até 10 MB."));
+      return;
+    }
     const c = current;
     const body = el("body").value;
     const button = event.submitter;
     button.disabled = true;
     try {
-      const sent = await api(`/api/chat/conversations/${c.id}/messages`, { method: "POST", body: JSON.stringify({ body }) });
+      let payload = JSON.stringify({ body });
+      if (file) {
+        payload = new FormData();
+        payload.append("body", body);
+        payload.append("file", file);
+      }
+      const sent = await api(`/api/chat/conversations/${c.id}/${file ? "attachments" : "messages"}`, { method: "POST", body: payload });
       if (!sent) return;
       drafts.delete(c.id);
       if (current.id === c.id) {
         if (el("body").value === body) el("body").value = "";
+        if (el("file").files[0] === file) {
+          el("file").value = "";
+          el("remove-file").classList.add("hidden");
+        }
         // Fetch from the last cursor so concurrent incoming messages are not skipped.
         await refresh();
       }
@@ -143,6 +182,13 @@
     finally { el("older").disabled = false; }
   });
   document.querySelector('[data-tab="chat"]').addEventListener("click", refresh);
+  el("file").addEventListener("change", () => {
+    el("remove-file").classList.toggle("hidden", !el("file").files.length);
+  });
+  el("remove-file").addEventListener("click", () => {
+    el("file").value = "";
+    el("remove-file").classList.add("hidden");
+  });
   document.addEventListener("visibilitychange", refresh);
   const timer = setInterval(refresh, 6000);
   window.addEventListener("pagehide", () => clearInterval(timer));
