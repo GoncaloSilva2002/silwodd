@@ -170,7 +170,8 @@ function setActiveTab(tab) {
     logs: tabLogs,
     "add-work": tabAddWork,
     "add-client": tabAddClient,
-    users: tabUsers
+    users: tabUsers,
+    chat: document.getElementById("tab-chat")
   };
 
   Object.entries(sections).forEach(([key, section]) => {

@@ -29,6 +29,7 @@
         <div class="tabs" id="main-tabs">
           <button class="tab-btn active" data-tab="works">Obras</button>
           <button class="tab-btn" data-tab="clients">Clientes</button>
+          <button class="tab-btn" data-tab="chat">Chat</button>
           <button class="tab-btn" data-tab="logs">Logs</button>
           <button class="tab-btn" data-tab="add-work">Adicionar Obra</button>
           <button class="tab-btn" data-tab="add-client">Adicionar Cliente</button>
@@ -36,6 +37,33 @@
         </div>
         <div id="mobile-menu-overlay" class="mobile-menu-overlay" aria-hidden="true"></div>
 
+        <section id="tab-chat" class="hidden">
+          <h2>Chat</h2>
+          <p class="muted">As mensagens ficam guardadas. Os administradores podem consultar todas as conversas.</p>
+          <p id="chat-status" role="status"></p>
+          <div class="chat-layout">
+            <aside class="chat-sidebar" aria-label="Conversas">
+              <form id="chat-start">
+                <label for="chat-recipient">Nova conversa</label>
+                <select id="chat-recipient" required><option value="">Selecionar utilizador</option></select>
+                <button type="submit">Abrir conversa</button>
+              </form>
+              <h3 id="chat-list-title">Conversas</h3>
+              <div id="chat-conversations"></div>
+            </aside>
+            <div class="chat-main">
+              <h3 id="chat-title">Seleciona uma conversa</h3>
+              <button type="button" id="chat-older" class="hidden">Carregar mensagens anteriores</button>
+              <div id="chat-messages" role="log" aria-label="Mensagens" aria-live="polite"></div>
+              <p id="chat-readonly" class="muted hidden">Consulta do administrador — apenas os participantes podem enviar mensagens.</p>
+              <form id="chat-send" class="hidden">
+                <label for="chat-body">Mensagem</label>
+                <textarea id="chat-body" rows="3" maxlength="4000" required placeholder="Escreve uma mensagem..."></textarea>
+                <button type="submit">Enviar</button>
+              </form>
+            </div>
+          </div>
+        </section>
         <section id="tab-works">
           <h2>Obras</h2>
           <div class="work-filters">
@@ -202,5 +230,6 @@
       </section>
     </main>
     <script src="/app.js"></script>
+    <script src="/chat.js"></script>
   </body>
 </html>
