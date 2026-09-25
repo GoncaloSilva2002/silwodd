@@ -88,7 +88,12 @@ app.set("trust proxy", 1);
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: "same-origin" }
+    crossOriginResourcePolicy: { policy: "same-origin" },
+    contentSecurityPolicy: {
+      directives: {
+        frameSrc: ["'self'", "http://192.168.1.112"]
+      }
+    }
   })
 );
 

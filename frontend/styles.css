@@ -103,6 +103,14 @@ button:active {
 }
 
 .notification-count { display: inline-block; background: #b42318; color: #fff; border-radius: 20px; padding: 2px 7px; margin-left: 5px; font-size: 12px; }
+.embedded-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.embedded-panel-head h2 { margin-bottom: 4px; }
+.button-link { display: inline-block; width: auto; padding: 10px 12px; border-radius: 8px; background: var(--primary); color: #fff; font-weight: 700; text-decoration: none; }
+.button-link:hover { background: var(--primary-strong); }
+.embedded-panel-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--muted); }
+.embedded-panel-notice button { width: auto; }
+.embedded-panel-frame { display: block; width: 100%; min-height: 68vh; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+@media (max-width: 640px) { .embedded-panel-head, .embedded-panel-notice { align-items: stretch; flex-direction: column; } .embedded-panel-frame { min-height: 70vh; } }
 .notification-item { display: flex; align-items: center; gap: 12px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; padding: 12px; }
 .notification-new { border-left: 4px solid #b42318; background: #fff8ef; }
 .notification-open { display: grid; gap: 6px; text-align: left; background: transparent; color: var(--text); border: 0; min-width: 0; overflow-wrap: anywhere; }

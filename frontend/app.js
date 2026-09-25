@@ -172,7 +172,8 @@ function setActiveTab(tab) {
     "add-client": tabAddClient,
     users: tabUsers,
     chat: document.getElementById("tab-chat"),
-    notifications: document.getElementById("tab-notifications")
+    notifications: document.getElementById("tab-notifications"),
+    aspiracao: document.getElementById("tab-aspiracao")
   };
 
   Object.entries(sections).forEach(([key, section]) => {
@@ -195,6 +196,14 @@ tabButtons.forEach((button) => {
     closeMobileMenu();
   });
 });
+
+const aspiracaoReload = document.getElementById("aspiracao-reload");
+const aspiracaoFrame = document.getElementById("aspiracao-frame");
+if (aspiracaoReload && aspiracaoFrame) {
+  aspiracaoReload.addEventListener("click", () => {
+    aspiracaoFrame.src = aspiracaoFrame.src;
+  });
+}
 
 function setMobileMenu(open) {
   document.body.classList.toggle("mobile-menu-open", open);
