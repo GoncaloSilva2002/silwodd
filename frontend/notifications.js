@@ -11,6 +11,55 @@
   let busy = false;
   let oldest = null;
 
+  function showNotificationPopup(item) {
+    const container = document.getElementById("toast-container");
+    if (!container) return;
+    const popup = document.createElement("div");
+    popup.className = "toast toast-notification-popup";
+    popup.setAttribute("role", "alert");
+    const content = document.createElement("div");
+    content.className = "notification-popup-content";
+    const heading = document.createElement("strong");
+    heading.textContent = "Nova notificação";
+    const message = document.createElement("span");
+    message.textContent = item.title;
+    content.append(heading, message);
+    const actions = document.createElement("div");
+    actions.className = "notification-popup-actions";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.textContent = "Abrir";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "notification-popup-close";
+    close.setAttribute("aria-label", "Fechar notificação");
+    close.textContent = "×";
+    const remove = () => {
+      if (!popup.isConnected) return;
+      popup.classList.add("toast-leaving");
+      window.setTimeout(() => popup.remove(), 180);
+    };
+    close.addEventListener("click", remove);
+    open.addEventListener("click", async () => {
+      open.disabled = true;
+      try {
+        await acknowledge(item);
+        remove();
+        if (item.kind === "message") {
+          setActiveTab("chat");
+          document.dispatchEvent(new CustomEvent("open-chat-conversation", { detail: item.conversation_id }));
+        } else {
+          setActiveTab("works");
+          await refreshWorksView({ workId: item.work_id });
+        }
+      } catch (error) { showToast(error.message, "error"); open.disabled = false; }
+    });
+    actions.append(open, close);
+    popup.append(content, actions);
+    container.appendChild(popup);
+    window.setTimeout(remove, 8000);
+  }
+
   function render() {
     list.replaceChildren();
     if (!items.size) list.textContent = "Ainda não tens notificações.";
@@ -72,7 +121,8 @@
       if (!data) return;
       const fresh = data.items.filter((item) => !item.seen && !known.has(item.id));
       if (initialized && fresh.length) {
-        showToast(fresh.length === 1 ? fresh[0].title : `Tens ${fresh.length} novas notificações.`, "info");
+        if (fresh.length === 1) showNotificationPopup(fresh[0]);
+        else showToast(`Tens ${fresh.length} novas notificações.`, "info");
       }
       for (const item of data.items) { items.set(item.id, item); known.add(item.id); }
       if (!initialized || !oldest) {

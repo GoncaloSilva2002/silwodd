@@ -179,6 +179,20 @@ button:active {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
+.toast-notification-popup {
+  align-items: stretch;
+  background: #fffdf5;
+  border-color: #d8bb64;
+  color: var(--text);
+  flex-direction: column;
+  gap: 10px;
+}
+.notification-popup-content { display: grid; gap: 4px; }
+.notification-popup-content span { font-weight: 500; overflow-wrap: anywhere; }
+.notification-popup-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.notification-popup-actions button { width: auto; padding: 7px 12px; }
+.notification-popup-actions .notification-popup-close { background: transparent; color: var(--text); font-size: 20px; padding: 3px 8px; }
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateY(-8px); }
 }
