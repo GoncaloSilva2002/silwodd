@@ -846,6 +846,9 @@ function renderWorks(items, target) {
       (w) => {
         const materials = getWorkMaterials(w);
         const processSteps = getWorkProcessSteps(w);
+        const visibleGroups = worksFilterStatus === "in_progress"
+          ? (w.groups || []).filter((group) => group.status === "in_progress")
+          : (w.groups || []);
         const completedSteps = processSteps.filter((step) => step.done).length;
         const progressPercent = processSteps.length
           ? Math.round((completedSteps / processSteps.length) * 100)
@@ -856,7 +859,7 @@ function renderWorks(items, target) {
           <span class="work-summary-main">
             <strong class="work-summary-title">${escapeHtml(w.title)}</strong>
             <span class="work-summary-client">${escapeHtml(w.client_name || "Sem cliente")}</span>
-            ${Array.isArray(w.groups) && w.groups.length ? `<span class="muted">${w.groups.length} grupo(s): ${w.groups.map((group) => escapeHtml(group.title)).join(", ")}</span>` : ""}
+            ${visibleGroups.length ? `<span class="muted">${visibleGroups.length} zona(s) em produção: ${visibleGroups.map((group) => escapeHtml(group.title)).join(", ")}</span>` : ""}
           </span>
           <span class="work-summary-side">
             <span class="work-summary-meta">${escapeHtml(statusLabel(w.status))} · Prioridade ${escapeHtml(priorityLabel(w.priority))}</span>
@@ -911,6 +914,14 @@ function renderWorks(items, target) {
           </div>
           ` : ""}
           ${w.description ? `<p class="work-description">${escapeHtml(w.description)}</p>` : ""}
+          ${visibleGroups.length ? `
+            <div class="work-groups-summary">
+              <strong>${worksFilterStatus === "in_progress" ? "Zonas em produção" : "Zonas da obra"}</strong>
+              <div class="work-groups-list">
+                ${visibleGroups.map((group) => `<span class="work-group-pill ${group.status === "in_progress" ? "active" : ""}">${escapeHtml(group.title)} · ${escapeHtml(statusLabel(group.status))}</span>`).join("")}
+              </div>
+            </div>
+          ` : ""}
           <div class="detail-tabs">
             <button type="button" class="detail-tab-btn active" data-detail-tab="materials">Materiais</button>
             <button type="button" class="detail-tab-btn" data-detail-tab="process">Etapas do Processo</button>

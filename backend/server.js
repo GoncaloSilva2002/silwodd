@@ -790,7 +790,16 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   if (statusFilterCode) {
     const estadoId = await getEstadoIdFromCode(statusFilterCode);
     if (!estadoId) return [];
-    whereClauses.push("o.id_estado = ?");
+    whereClauses.push(`(
+      o.id_estado = ?
+      OR EXISTS (
+        SELECT 1
+        FROM obras child_work
+        WHERE child_work.id_obra_principal = o.id
+          AND child_work.id_estado = ?
+      )
+    )`);
+    params.push(estadoId);
     params.push(estadoId);
   }
 
@@ -814,7 +823,13 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   if (!obras.length) return [];
 
   const childRows = schemaInfo.obrasParentColumn
-    ? await query("SELECT id, nome_obra, id_obra_principal FROM obras WHERE id_obra_principal IN (" + obras.map(() => "?").join(", ") + ") ORDER BY id ASC", obras.map((obra) => obra.id))
+    ? await query(`
+        SELECT child.id, child.nome_obra, child.id_obra_principal, estado.nome AS estado_nome
+        FROM obras child
+        INNER JOIN estados estado ON estado.id = child.id_estado
+        WHERE child.id_obra_principal IN (${obras.map(() => "?").join(", ")})
+        ORDER BY child.id ASC
+      `, obras.map((obra) => obra.id))
     : [];
   const allWorkIds = [...obras.map((obra) => obra.id), ...childRows.map((row) => row.id)];
   const placeholdersAllWorks = allWorkIds.map(() => "?").join(", ");
@@ -902,7 +917,11 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     };
     item.groups = childRows
       .filter((child) => Number(child.id_obra_principal) === Number(obra.id))
-      .map((child) => ({ id: child.id, title: child.nome_obra }));
+      .map((child) => ({
+        id: child.id,
+        title: child.nome_obra,
+        status: mapStatusNameToCode(child.estado_nome)
+      }));
     const workMaterials = grouped.get(obra.id) || [];
     const byName = new Map();
     for (const material of workMaterials) {
