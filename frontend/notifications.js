@@ -43,6 +43,11 @@
   }
 
   async function enablePushNotifications() {
+    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    const isStandalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
+    if (isIOS && !isStandalone) {
+      throw new Error("No iPhone, abre o menu Partilhar, escolhe 'Adicionar ao ecrã principal' e abre a app pelo novo ícone.");
+    }
     if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window)) {
       throw new Error("Este navegador ou ligação não suporta notificações push. Usa HTTPS.");
     }
