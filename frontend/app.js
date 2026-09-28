@@ -2141,6 +2141,9 @@ function handleWorkToggle(event) {
   const summaryButton = event.target.closest(".work-summary-btn");
   if (!summaryButton) return;
 
+  event.preventDefault();
+  event.stopPropagation();
+
   const workItem = summaryButton.closest(".work-item");
   const details = workItem?.querySelector(".work-details");
   if (!details) return;
