@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Silwood</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+    <main class="container">
+      <section class="card app-shell">
+        <div class="topbar">
+          <div class="topbar-brand">
+            <img class="topbar-logo" src="/images.png" alt="Logotipo SW" />
+            <div>
+            <h1>Silwood</h1>
+            <p class="muted" id="welcome-line"></p>
+            </div>
+          </div>
+          <div class="topbar-actions">
+            <button type="button" id="mobile-menu-btn" aria-label="Abrir menu" aria-controls="main-tabs" aria-expanded="false">
+              <span></span><span></span><span></span>
+            </button>
+            <button id="logout-btn">Sair</button>
+          </div>
+        </div>
+
+        <div class="tabs" id="main-tabs">
+          <button class="tab-btn active" data-tab="works">Obras</button>
+          <button class="tab-btn" data-tab="clients">Clientes</button>
+          <button class="tab-btn" data-tab="chat">Chat</button>
+          <button class="tab-btn" data-tab="notifications">Notificações <span id="notification-count" class="notification-count hidden" aria-live="polite"></span></button>
+          <button class="tab-btn" data-tab="aspiracao">Aspiração</button>
+          <button class="tab-btn" data-tab="calendario">Calendário</button>
+          <button class="tab-btn" data-tab="logs">Logs</button>
+          <button class="tab-btn" data-tab="add-work">Adicionar Obra</button>
+          <button class="tab-btn" data-tab="add-client">Adicionar Cliente</button>
+          <button class="tab-btn" data-tab="users">Utilizadores</button>
+        </div>
+        <div id="mobile-menu-overlay" class="mobile-menu-overlay" aria-hidden="true"></div>
+
+        <section id="tab-notifications" class="hidden">
+          <h2>Notificações</h2>
+          <p class="muted">Novas mensagens e alterações de prioridade das obras.</p>
+          <p id="notifications-status" role="status"></p>
+          <div id="notifications-list"></div>
+          <button id="notifications-older" type="button" class="hidden">Ver notificações anteriores</button>
+        </section>
+        <section id="tab-aspiracao" class="hidden">
+          <div class="aspiracao-card">
+            <h2>Aspiração</h2>
+            <p class="muted">Abre o painel do sistema de aspiração numa nova janela.</p>
+            <a class="button-link" href="http://192.168.1.112/logo_login.shtm?!App-Language=1" target="_blank" rel="noopener noreferrer">Abrir painel de aspiração</a>
+          </div>
+        </section>
+        <section id="tab-calendario" class="hidden">
+          <div class="aspiracao-card">
+            <h2>Calendário</h2>
+            <p class="muted">Abre o calendário da empresa numa nova janela.</p>
+            <a class="button-link" href="http://192.168.1.88:8000/empresa.html" target="_blank" rel="noopener noreferrer">Abrir calendário</a>
+          </div>
+        </section>
+        <section id="tab-chat" class="hidden">
+          <h2>Chat</h2>
+          <p id="chat-status" role="status"></p>
+          <div class="chat-layout">
+            <aside class="chat-sidebar" aria-label="Conversas">
+              <form id="chat-start">
+                <label for="chat-recipient">Nova conversa</label>
+                <select id="chat-recipient" required><option value="">Selecionar utilizador</option></select>
+                <button type="submit">Abrir conversa</button>
+              </form>
+              <h3 id="chat-list-title">Conversas</h3>
+              <div id="chat-conversations"></div>
+            </aside>
+            <div class="chat-main">
+              <h3 id="chat-title">Seleciona uma conversa</h3>
+              <button type="button" id="chat-older" class="hidden">Carregar mensagens anteriores</button>
+              <div id="chat-messages" role="log" aria-label="Mensagens" aria-live="polite"></div>
+              <p id="chat-readonly" class="muted hidden">Consulta do administrador — apenas os participantes podem enviar mensagens.</p>
+              <form id="chat-send" class="hidden">
+                <label for="chat-body">Mensagem</label>
+                <textarea id="chat-body" rows="3" maxlength="4000" placeholder="Escreve uma mensagem..."></textarea>
+                <label for="chat-file">Anexar imagem ou ficheiro (até 10 MB)</label>
+                <input id="chat-file" type="file" />
+                <button id="chat-remove-file" type="button" class="hidden">Remover anexo</button>
+                <button type="submit">Enviar</button>
+              </form>
+            </div>
+          </div>
+        </section>
+        <section id="tab-works">
+          <h2>Obras</h2>
+          <div class="work-filters">
+            <div class="status-filter-group">
+              <button type="button" class="status-filter-btn" data-status="pending">Pendentes/Encomenda</button>
+              <button type="button" class="status-filter-btn active" data-status="in_progress">Produção</button>
+              <button type="button" class="status-filter-btn" data-status="done">Finalizado</button>
+            </div>
+            <div class="client-filter-group">
+              <div class="search-input-row">
+                <input id="works-client-search" placeholder="Pesquisar obras por cliente..." />
+                <div id="works-client-search-menu" class="autocomplete-menu hidden"></div>
+              </div>
+              <div class="search-actions">
+                <button type="button" id="works-search-btn">Pesquisar</button>
+                <button type="button" id="works-clear-btn">Limpar</button>
+              </div>
+            </div>
+          </div>
+          <div id="works-list" class="grid"></div>
+        </section>
+
+        <section id="tab-clients" class="hidden">
+          <h2>Clientes</h2>
+          <div class="client-filter-group section-search">
+            <div class="search-input-row">
+              <input id="clients-search" placeholder="Pesquisar cliente..." />
+              <div id="clients-search-menu" class="autocomplete-menu hidden"></div>
+            </div>
+            <div class="search-actions">
+              <button type="button" id="clients-search-btn">Pesquisar</button>
+              <button type="button" id="clients-clear-btn">Limpar</button>
+            </div>
+          </div>
+          <div id="clients-list" class="grid"></div>
+        </section>
+
+        <section id="tab-client-detail" class="hidden">
+          <button type="button" id="client-detail-back" class="secondary-btn">&larr; Voltar aos clientes</button>
+          <div id="client-detail-content"></div>
+        </section>
+
+        <section id="tab-logs" class="hidden">
+          <h2>Logs</h2>
+          <div class="client-filter-group section-search">
+            <div class="search-input-row">
+              <input id="logs-work-search" placeholder="Pesquisar logs por obra..." />
+            </div>
+            <div class="search-actions">
+              <button type="button" id="logs-search-btn">Pesquisar</button>
+              <button type="button" id="logs-clear-btn">Limpar</button>
+            </div>
+          </div>
+          <div id="logs-list" class="grid"></div>
+        </section>
+
+        <section id="tab-add-work" class="hidden">
+          <h2>Adicionar Obra</h2>
+          <form id="work-form" class="panel-form">
+            <div class="form-grid">
+              <div>
+                <label for="work-title">Nome da obra</label>
+                <input id="work-title" required />
+              </div>
+              <div>
+                <label for="work-status">Estado</label>
+                <select id="work-status">
+                  <option value="pending">Pendente/Encomenda</option>
+                  <option value="in_progress">Produção</option>
+                  <option value="done">Finalizada</option>
+                </select>
+              </div>
+              <div>
+                <label for="work-client-input">Cliente</label>
+                <input id="work-client-input" placeholder="Escreve para filtrar clientes (opcional)" autocomplete="off" />
+                <div id="work-client-menu" class="autocomplete-menu hidden"></div>
+                <input id="work-client" type="hidden" />
+              </div>
+              <div>
+                <label for="work-due-date">Prazo</label>
+                <input id="work-due-date" type="date" />
+              </div>
+              <div>
+                <label for="work-priority">Prioridade</label>
+                <select id="work-priority">
+                  <option value="high">Alta</option>
+                  <option value="medium" selected>Média</option>
+                  <option value="low">Baixa</option>
+                </select>
+              </div>
+              <div>
+                <label for="work-parent">Obra principal</label>
+                <select id="work-parent">
+                  <option value="">Obra principal (sem grupo)</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-field form-field-spaced">
+              <label for="work-description">Descrição</label>
+              <textarea id="work-description"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Adicionar Obra</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="tab-add-client" class="hidden">
+          <h2>Adicionar Cliente</h2>
+          <form id="client-form" class="panel-form">
+            <div class="form-grid">
+              <div>
+                <label for="client-name">Nome</label>
+                <input id="client-name" required />
+              </div>
+              <div>
+                <label for="client-phone">Telefone</label>
+                <input id="client-phone" />
+              </div>
+              <div>
+                <label for="client-email">Email</label>
+                <input id="client-email" type="email" />
+              </div>
+              <div>
+                <label for="client-address">Morada</label>
+                <input id="client-address" />
+              </div>
+              <div>
+                <label for="client-nif">NIF</label>
+                <input id="client-nif" inputmode="numeric" maxlength="9" />
+              </div>
+            </div>
+            <div class="form-field form-field-spaced">
+              <label for="client-notes">Notas</label>
+              <textarea id="client-notes"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Adicionar Cliente</button>
+            </div>
+          </form>
+        </section>
+
+        <section id="tab-users" class="hidden">
+          <h2>Utilizadores</h2>
+          <p class="muted">Apenas administradores podem gerir utilizadores.</p>
+          <form id="user-form" class="panel-form">
+            <div class="form-grid">
+              <div>
+                <label for="user-username">Username</label>
+                <input id="user-username" required />
+              </div>
+              <div>
+                <label for="user-password">Password</label>
+                <input id="user-password" type="password" minlength="6" required />
+              </div>
+              <div>
+                <label for="user-role">Role</label>
+                <select id="user-role">
+                  <option value="funcionario">Funcionario</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-actions">
+              <button type="submit">Criar Utilizador</button>
+            </div>
+          </form>
+          <div id="users-list" class="grid users-grid"></div>
+        </section>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+    <script src="/chat.js"></script>
+    <script src="/notifications.js"></script>
+  </body>
+</html>

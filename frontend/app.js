@@ -1,0 +1,2269 @@
+const token = localStorage.getItem("token");
+const user = JSON.parse(localStorage.getItem("user") || "{}");
+const toastContainer = document.getElementById("toast-container");
+
+if (!token) {
+  window.location.href = "/login.html";
+}
+
+document.body.classList.add(`role-${String(user.role || "user").toLowerCase()}`);
+
+const welcomeLine = document.getElementById("welcome-line");
+const logoutBtn = document.getElementById("logout-btn");
+const mobileMenuBtn = document.getElementById("mobile-menu-btn");
+const mobileMenuOverlay = document.getElementById("mobile-menu-overlay");
+const tabButtons = document.querySelectorAll(".tab-btn");
+const tabWorks = document.getElementById("tab-works");
+const tabClients = document.getElementById("tab-clients");
+const tabClientDetail = document.getElementById("tab-client-detail");
+const clientDetailContent = document.getElementById("client-detail-content");
+const clientDetailBack = document.getElementById("client-detail-back");
+const tabLogs = document.getElementById("tab-logs");
+const tabAddWork = document.getElementById("tab-add-work");
+const tabAddClient = document.getElementById("tab-add-client");
+const tabUsers = document.getElementById("tab-users");
+const worksList = document.getElementById("works-list");
+const clientsList = document.getElementById("clients-list");
+const logsList = document.getElementById("logs-list");
+const usersList = document.getElementById("users-list");
+const clientForm = document.getElementById("client-form");
+const workForm = document.getElementById("work-form");
+const userForm = document.getElementById("user-form");
+const workClientIdInput = document.getElementById("work-client");
+const workClientNameInput = document.getElementById("work-client-input");
+const workClientMenu = document.getElementById("work-client-menu");
+const worksClientSearchInput = document.getElementById("works-client-search");
+const worksClientSearchMenu = document.getElementById("works-client-search-menu");
+const worksSearchBtn = document.getElementById("works-search-btn");
+const worksClearBtn = document.getElementById("works-clear-btn");
+const clientsSearchInput = document.getElementById("clients-search");
+const clientsSearchMenu = document.getElementById("clients-search-menu");
+const clientsSearchBtn = document.getElementById("clients-search-btn");
+const clientsClearBtn = document.getElementById("clients-clear-btn");
+const logsWorkSearchInput = document.getElementById("logs-work-search");
+const logsSearchBtn = document.getElementById("logs-search-btn");
+const logsClearBtn = document.getElementById("logs-clear-btn");
+const statusFilterButtons = document.querySelectorAll(".status-filter-btn");
+const clientNameToId = new Map();
+let clientAutocompleteItems = [];
+let clientByNormalizedName = new Map();
+let worksFilterStatus = "in_progress";
+let worksFilterClient = "";
+let worksFilterClientId = "";
+let clientsFilterTerm = "";
+let clientsFilterClientId = "";
+let logsFilterWork = "";
+let clientsCache = [];
+let usersCache = [];
+let logsCache = [];
+let draggedProcessStepId = null;
+let worksCache = [];
+const workParentSelect = document.getElementById("work-parent");
+
+const defaultMaterialTypes = [
+  { key: "stone", label: "Pedra" },
+  { key: "wood_panels", label: "Placas de madeira" },
+  { key: "hardware", label: "Ferragens" },
+  { key: "paint", label: "Tinta" }
+];
+const defaultProcessSteps = [
+  { key: "kitchen_design", label: "Desenho da cozinha" },
+  { key: "cutting", label: "Corte" },
+  { key: "edging", label: "Orlar" },
+  { key: "cnc", label: "CNC" },
+  { key: "assembly", label: "Montagem na fábrica" },
+  { key: "painting", label: "Pintura" },
+  { key: "loaded", label: "Carregar" },
+  { key: "unloaded", label: "Descarregar" },
+  { key: "installation_start", label: "Início de montagem em obra" },
+  { key: "installation_end", label: "Fim de montagem em obra" }
+];
+const processStepIcons = {
+  kitchen_design: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 18h16v2H4zm2-3 8-8 3 3-8 8H6zm9-9 1.5-1.5a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 1 0 1.4L18 9z" fill="currentColor"></path>
+    </svg>
+  `,
+  cutting: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10 4h4v5l4 2v2l-4 2v5h-4v-5l-4-2v-2l4-2z" fill="currentColor"></path>
+    </svg>
+  `,
+  cnc: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 6h16v12H4zm3 3v6h10V9zm4-5h2v3h-2z" fill="currentColor"></path>
+    </svg>
+  `,
+  edging: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 5h12v3H7v11H4zm6 6h10v8H10zm2 2v4h6v-4z" fill="currentColor"></path>
+    </svg>
+  `,
+  assembly: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="m7 4 3 3-2 2 2 2-3 3-5-5zm10 6 3 3-8 8H9v-3zM14 4h6v6h-2V7.4l-4.3 4.3-1.4-1.4L16.6 6H14z" fill="currentColor"></path>
+    </svg>
+  `,
+  painting: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 17h10v3H3zm8-8h10l-2 6H9zm1-4h6l2 3H10z" fill="currentColor"></path>
+    </svg>
+  `,
+  loaded: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 7h11v8H3zm11 2h3l3 3v3h-6zm-8 8a2 2 0 1 1 0 4 2 2 0 0 1 0-4zm11 0a2 2 0 1 1 0 4 2 2 0 0 1 0-4z" fill="currentColor"></path>
+    </svg>
+  `,
+  unloaded: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 6h16v10H4zm8 13-4-4h3v-4h2v4h3z" fill="currentColor"></path>
+    </svg>
+  `,
+  installation_start: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 3 10h2v10h5v-6h4v6h5V10h2z" fill="currentColor"></path>
+    </svg>
+  `,
+  installation_end: `
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3 3 10h2v10h14V10h2zm-2 12 7-7 1.4 1.4L10 17.8l-3.4-3.4L8 13z" fill="currentColor"></path>
+    </svg>
+  `
+};
+const statusOptions = [
+  { value: "pending", label: "Pendente/Encomenda" },
+  { value: "in_progress", label: "Produção" },
+  { value: "done", label: "Finazalizada" }
+];
+const priorityOptions = [
+  { value: "high", label: "Alta" },
+  { value: "medium", label: "Média" },
+  { value: "low", label: "Baixa" }
+];
+
+welcomeLine.textContent = `Utilizador: ${user.username || "N/A"} (${user.role || "user"})`;
+
+if (user.role !== "admin") {
+  const addWorkTabButton = document.querySelector('.tab-btn[data-tab="add-work"]');
+  const addClientTabButton = document.querySelector('.tab-btn[data-tab="add-client"]');
+  const addUserTabButton = document.querySelector('.tab-btn[data-tab="users"]');
+  const logsTabButton = document.querySelector('.tab-btn[data-tab="logs"]');
+  if (addWorkTabButton) addWorkTabButton.classList.add("hidden");
+  if (addClientTabButton) addClientTabButton.classList.add("hidden");
+  if (addUserTabButton) addUserTabButton.classList.add("hidden");
+  if (logsTabButton) logsTabButton.classList.add("hidden");
+  tabAddWork.classList.add("hidden");
+  tabAddClient.classList.add("hidden");
+  tabUsers.classList.add("hidden");
+  if (tabLogs) tabLogs.classList.add("hidden");
+}
+
+logoutBtn.addEventListener("click", () => {
+  localStorage.removeItem("token");
+  localStorage.removeItem("user");
+  window.location.href = "/login.html";
+});
+
+function setActiveTab(tab) {
+  const sections = {
+    works: tabWorks,
+    clients: tabClients,
+    "client-detail": tabClientDetail,
+    logs: tabLogs,
+    "add-work": tabAddWork,
+    "add-client": tabAddClient,
+    users: tabUsers,
+    chat: document.getElementById("tab-chat"),
+    notifications: document.getElementById("tab-notifications"),
+    aspiracao: document.getElementById("tab-aspiracao"),
+    calendario: document.getElementById("tab-calendario")
+  };
+
+  Object.entries(sections).forEach(([key, section]) => {
+    if (!section) return;
+    section.classList.toggle("hidden", key !== tab);
+  });
+
+  tabButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.tab === tab);
+  });
+
+  if (tab === "add-work") {
+    renderClientMenu(workClientNameInput.value);
+  }
+}
+
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    setActiveTab(button.dataset.tab);
+    closeMobileMenu();
+  });
+});
+
+
+function setMobileMenu(open) {
+  document.body.classList.toggle("mobile-menu-open", open);
+  mobileMenuBtn?.setAttribute("aria-expanded", String(open));
+  mobileMenuBtn?.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+  mobileMenuOverlay?.setAttribute("aria-hidden", String(!open));
+}
+
+function closeMobileMenu() {
+  setMobileMenu(false);
+}
+
+mobileMenuBtn?.addEventListener("click", () => {
+  setMobileMenu(!document.body.classList.contains("mobile-menu-open"));
+});
+mobileMenuOverlay?.addEventListener("click", closeMobileMenu);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeMobileMenu();
+});
+
+function escapeHtml(value) {
+  if (value == null) return "";
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function showToast(message, type = "success") {
+  if (!toastContainer || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.setAttribute("role", type === "error" ? "alert" : "status");
+  toast.innerHTML = `<span>${escapeHtml(message)}</span><button type="button" aria-label="Fechar aviso">&times;</button>`;
+  const remove = () => {
+    if (!toast.isConnected || toast.classList.contains("toast-leaving")) return;
+    toast.classList.add("toast-leaving");
+    window.setTimeout(() => toast.remove(), 180);
+  };
+  toast.querySelector("button").addEventListener("click", remove);
+  toastContainer.appendChild(toast);
+  window.setTimeout(remove, 3500);
+}
+
+function getSuccessMessage(path, method) {
+  const verb = String(method || "GET").toUpperCase();
+  if (verb === "GET") return "";
+  if (verb === "POST" && path === "/api/clients") return "Cliente criado com sucesso.";
+  if (verb === "PATCH" && /^\/api\/clients\/\d+$/.test(path)) return "Cliente atualizado com sucesso.";
+  if (verb === "DELETE" && /^\/api\/clients\/\d+$/.test(path)) return "Cliente eliminado com sucesso.";
+  if (verb === "POST" && path === "/api/works") return "Obra criada com sucesso.";
+  if (verb === "DELETE" && /^\/api\/works\/\d+$/.test(path)) return "Obra eliminada com sucesso.";
+  if (path.includes("/materials/") && verb === "DELETE") return "Material eliminado com sucesso.";
+  if (path.endsWith("/materials") && verb === "POST") return "Material adicionado com sucesso.";
+  if (path.includes("/materials/") && verb === "POST") return "Anexo do material guardado com sucesso.";
+  if (path.includes("/materials/") && verb === "PATCH") return "Material atualizado com sucesso.";
+  if (path.includes("/process/") && verb === "DELETE") return "Etapa eliminada com sucesso.";
+  if (path.endsWith("/process") && verb === "POST") return "Etapa adicionada com sucesso.";
+  if (path.includes("/process/") && verb === "POST") return "Anexo da etapa guardado com sucesso.";
+  if (path.includes("/process/") && verb === "PATCH") return "Etapa atualizada com sucesso.";
+  if (path.endsWith("/final-attachment") && verb === "POST") return "Anexos finais guardados com sucesso.";
+  if (path.endsWith("/status") && verb === "PATCH") return "Estado da obra atualizado.";
+  if (path.endsWith("/priority") && verb === "PATCH") return "Prioridade atualizada.";
+  if (path.endsWith("/observations") && verb === "PATCH") return "Observações guardadas.";
+  if (path.includes("/public-link")) return verb === "DELETE" ? "Acesso do cliente revogado." : "Link de acompanhamento criado.";
+  if (verb === "POST" && path === "/api/users") return "Utilizador criado com sucesso.";
+  if (verb === "DELETE" && path.startsWith("/api/users/")) return "Utilizador eliminado com sucesso.";
+  return "Alterações guardadas com sucesso.";
+}
+
+async function api(path, options = {}) {
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    ...(options.headers || {})
+  };
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(path, {
+    ...options,
+    headers
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    window.location.href = "/login.html";
+    return null;
+  }
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "Erro no pedido.");
+  }
+  const successMessage = options.successMessage === false
+    ? ""
+    : options.successMessage || getSuccessMessage(path, options.method);
+  if (successMessage) showToast(successMessage);
+  return data;
+}
+
+function getWorkMaterials(work) {
+  if (Array.isArray(work?.materials) && work.materials.length) {
+    return work.materials.map((material) => ({
+      id: material.id,
+      key: material.key || null,
+      label: material.label,
+      pdf_path: material.pdf_path || null,
+      ordered: Boolean(material.ordered),
+      arrived: Boolean(material.arrived),
+      order_note: material.order_note || "",
+      invoice_photo_path: material.invoice_photo_path || null,
+      order_note_pdf_path: material.order_note_pdf_path || null,
+      ordered_by_username: material.ordered_by_username || null,
+      ordered_at: material.ordered_at || null,
+      arrived_by_username: material.arrived_by_username || null,
+      arrived_at: material.arrived_at || null
+    }));
+  }
+
+  return defaultMaterialTypes.map((material) => ({
+    id: null,
+    key: material.key,
+    label: material.label,
+    pdf_path: work?.[`${material.key}_pdf_path`] || null,
+    ordered: Boolean(work?.[`${material.key}_ordered`]),
+    arrived: Boolean(work?.[`${material.key}_arrived`]),
+    order_note: "",
+    invoice_photo_path: null,
+    order_note_pdf_path: null,
+    ordered_by_username: null,
+    ordered_at: null,
+    arrived_by_username: null,
+    arrived_at: null
+  }));
+}
+
+function formatMaterialCheckMeta(username, when, actionLabel) {
+  if (!username) return "";
+  const formattedWhen = when ? formatLogDate(when) : "";
+  return formattedWhen ? `${actionLabel} por ${username} em ${formattedWhen}` : `${actionLabel} por ${username}`;
+}
+
+function renderMaterialAttachmentSummary(material) {
+  const attachments = [
+    { path: material?.order_note_pdf_path, label: "Ver nota" },
+    { path: material?.invoice_photo_path, label: "Ver recebido" },
+    { path: material?.pdf_path, label: "Ver anexo" }
+  ].filter((attachment) => attachment.path);
+
+  if (!attachments.length) {
+    return `<span class="muted material-attachment-summary">Sem anexo</span>`;
+  }
+
+  return `
+    <div class="material-links material-attachment-summary">
+      ${attachments.map((attachment) => `
+        <a class="material-link" href="${escapeHtml(attachment.path)}" target="_blank" rel="noopener noreferrer">${attachment.label}</a>
+      `).join("")}
+    </div>
+  `;
+}
+
+function materialHtml(work, material) {
+  const ordered = Boolean(material.ordered);
+  const arrived = Boolean(material.arrived);
+  const invoicePhotoPath = material.invoice_photo_path || null;
+  const orderNotePdfPath = material.order_note_pdf_path || null;
+  const orderedMeta = formatMaterialCheckMeta(material.ordered_by_username, material.ordered_at, "Encomendado");
+  const arrivedMeta = formatMaterialCheckMeta(material.arrived_by_username, material.arrived_at, "Recebido");
+  const canManageMaterials = user.role === "admin";
+  const orderNoteHtml = orderNotePdfPath
+    ? `
+      <div class="material-links">
+        <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" target="_blank" rel="noopener noreferrer">Ver nota</a>
+        <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" download>Download nota</a>
+      </div>
+    `
+    : `<span class="muted">Sem nota de encomenda</span>`;
+  const invoicePhotoHtml = invoicePhotoPath
+    ? `
+      <div class="material-links">
+        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver comprovativo</a>
+        <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download comprovativo</a>
+      </div>
+    `
+    : `<span class="muted">Sem comprovativo de receção</span>`;
+
+  return `
+    <div class="material-item" data-work-id="${work.id}" data-material-id="${material.id || ""}" data-material-key="${material.key || ""}">
+      <div class="material-head">
+        <h4>${material.label}</h4>
+        ${renderMaterialAttachmentSummary(material)}
+      </div>
+      ${canManageMaterials ? `
+      <div class="material-item-tools">
+        <button type="button" class="material-delete-btn" aria-label="Eliminar material">Eliminar</button>
+      </div>
+      ` : ""}
+      <div class="material-toggle-row">
+        <span>Encomendado</span>
+        <button type="button" class="material-toggle-btn material-ordered ${ordered ? "done" : ""}" aria-label="${ordered ? "Encomendado" : "Marcar como encomendado"}">
+          <span class="material-toggle-square" aria-hidden="true"></span>
+        </button>
+      </div>
+      ${orderedMeta ? `<p class="muted material-check-meta">${escapeHtml(orderedMeta)}</p>` : ""}
+      <div class="material-order-note-box">
+        <label><strong>Nota de encomenda</strong></label>
+        <div class="material-order-note-links">${orderNoteHtml}</div>
+        <div class="material-actions material-order-note-actions">
+          <div class="attachment-choice">
+            <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="material-order-note-file hidden" accept="application/pdf,image/*" /></label>
+            <label class="attachment-choice-btn">Tirar foto<input type="file" class="material-order-note-camera hidden" accept="image/*" capture="environment" /></label>
+          </div>
+          <button type="button" class="upload-material-order-note-btn">Anexar</button>
+        </div>
+      </div>
+      <div class="material-toggle-row">
+        <span>Recebido</span>
+        <button type="button" class="material-toggle-btn material-arrived ${arrived ? "done" : ""}" aria-label="${arrived ? "Recebido" : "Marcar como recebido"}">
+          <span class="material-toggle-square" aria-hidden="true"></span>
+        </button>
+      </div>
+      ${arrivedMeta ? `<p class="muted material-check-meta">${escapeHtml(arrivedMeta)}</p>` : ""}
+      <div class="material-invoice-box">
+        <label><strong>Anexo do recebido</strong></label>
+        <div class="material-invoice-links">${invoicePhotoHtml}</div>
+        <div class="material-actions material-receipt-actions">
+          <div class="attachment-choice">
+            <label class="attachment-choice-btn">Escolher ficheiro<input type="file" class="material-invoice-file hidden" accept="application/pdf,image/*" /></label>
+            <label class="attachment-choice-btn">Tirar foto<input type="file" class="material-invoice-camera hidden" accept="image/*" capture="environment" /></label>
+          </div>
+          <button type="button" class="upload-material-receipt-btn">Anexar</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMaterialLinks(pdfPath) {
+  if (!pdfPath) return `<span class="muted">Sem anexo</span>`;
+  const safePath = escapeHtml(pdfPath);
+  return `
+    <div class="material-links">
+      <a class="material-link" href="${safePath}" target="_blank" rel="noopener noreferrer">Ver anexo</a>
+      <a class="material-link" href="${safePath}" download>Download</a>
+    </div>
+  `;
+}
+
+function renderFinalAttachmentPreview(path) {
+  if (!path) return "";
+  const safePath = escapeHtml(path);
+  const pathWithoutQuery = String(path).split("?")[0].toLowerCase();
+  const isImage = /\.(jpe?g|png|webp|gif|heic|heif)$/.test(pathWithoutQuery);
+  if (isImage) {
+    return `<a class="final-image-link" href="${safePath}" target="_blank" rel="noopener noreferrer"><img class="final-work-image" src="${safePath}" alt="Imagem final da obra" /></a>`;
+  }
+  return `<a class="material-link" href="${safePath}" target="_blank" rel="noopener noreferrer">Ver anexo final da obra</a>`;
+}
+
+function renderProcessAttachmentLinks(step) {
+  const paths = Array.isArray(step?.attachment_paths) && step.attachment_paths.length
+    ? step.attachment_paths
+    : (step?.pdf_path ? [step.pdf_path] : []);
+  if (!paths.length) return `<span class="muted">Sem anexo</span>`;
+  return `
+    <div class="material-links">
+      ${paths.map((path, index) => `
+        <a class="material-link" href="${escapeHtml(path)}" target="_blank" rel="noopener noreferrer">Ver anexo ${index + 1}</a>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderFinalAttachments(work) {
+  const paths = Array.isArray(work?.final_attachment_paths) && work.final_attachment_paths.length
+    ? work.final_attachment_paths
+    : (work?.final_attachment_path ? [work.final_attachment_path] : []);
+  if (!paths.length) return "";
+  return `<div class="final-attachment-gallery">${paths.map(renderFinalAttachmentPreview).join("")}</div>`;
+}
+
+function updateMaterialItemFromWork(materialItem, work) {
+  if (!materialItem || !work) return;
+  const materialId = Number(materialItem.dataset.materialId);
+  const materialKey = materialItem.dataset.materialKey;
+  const material = getWorkMaterials(work).find((item) => {
+    if (materialId) return Number(item.id) === materialId;
+    return item.key && item.key === materialKey;
+  });
+  if (!material) return;
+
+  const ordered = Boolean(material.ordered);
+  const arrived = Boolean(material.arrived);
+  const invoicePhotoPath = material.invoice_photo_path || null;
+  const orderNotePdfPath = material.order_note_pdf_path || null;
+
+  const orderedInput = materialItem.querySelector(".material-ordered");
+  const arrivedInput = materialItem.querySelector(".material-arrived");
+  if (orderedInput) {
+    orderedInput.classList.toggle("done", ordered);
+    orderedInput.setAttribute("aria-label", ordered ? "Encomendado" : "Marcar como encomendado");
+  }
+  if (arrivedInput) {
+    arrivedInput.classList.toggle("done", arrived);
+    arrivedInput.setAttribute("aria-label", arrived ? "Recebido" : "Marcar como recebido");
+  }
+
+  const linksContainer = materialItem.querySelector(".material-attachment-summary");
+  if (linksContainer) {
+    linksContainer.outerHTML = renderMaterialAttachmentSummary(material);
+  }
+
+  const orderNoteLinksContainer = materialItem.querySelector(".material-order-note-links");
+  if (orderNoteLinksContainer) {
+    orderNoteLinksContainer.innerHTML = orderNotePdfPath
+      ? `
+        <div class="material-links">
+          <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" target="_blank" rel="noopener noreferrer">Ver nota</a>
+          <a class="material-link" href="${escapeHtml(orderNotePdfPath)}" download>Download nota</a>
+        </div>
+      `
+      : `<span class="muted">Sem nota de encomenda</span>`;
+  }
+
+  const invoiceLinksContainer = materialItem.querySelector(".material-invoice-links");
+  if (invoiceLinksContainer) {
+    invoiceLinksContainer.innerHTML = invoicePhotoPath
+      ? `
+        <div class="material-links">
+          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" target="_blank" rel="noopener noreferrer">Ver comprovativo</a>
+          <a class="material-link" href="${escapeHtml(invoicePhotoPath)}" download>Download comprovativo</a>
+        </div>
+      `
+      : `<span class="muted">Sem comprovativo de receção</span>`;
+  }
+}
+
+function getWorkProcessSteps(work) {
+  if (Array.isArray(work?.process_steps) && work.process_steps.length) {
+    return work.process_steps.map((step, index) => ({
+      id: step.id,
+      key: step.key || null,
+      label: step.label,
+      done: Boolean(step.done),
+      pdf_path: step.pdf_path || null,
+      attachment_paths: Array.isArray(step.attachment_paths) ? step.attachment_paths : [],
+      can_upload_pdf: Boolean(step.can_upload_pdf),
+      order_index: Number(step.order_index ?? index),
+      checked_by_username: step.checked_by_username || null,
+      checked_at: step.checked_at || null
+    }));
+  }
+
+  return defaultProcessSteps.map((step, index) => ({
+    id: null,
+    key: step.key,
+    label: step.label,
+    done: Boolean(work?.[`${step.key}_done`]),
+    pdf_path: work?.[`${step.key}_pdf_path`] || null,
+    attachment_paths: work?.[`${step.key}_pdf_path`] ? [work[`${step.key}_pdf_path`]] : [],
+    can_upload_pdf: step.key === "kitchen_design" || step.key === "assembly",
+    order_index: index,
+    checked_by_username: null,
+    checked_at: null
+  }));
+}
+
+function formatProcessCheckMeta(step) {
+  if (!step?.done || !step?.checked_by_username) return "";
+  const when = step.checked_at ? formatLogDate(step.checked_at) : "";
+  return when ? `Marcado por ${step.checked_by_username} em ${when}` : `Marcado por ${step.checked_by_username}`;
+}
+
+function processStepHtml(work, step, stepIndex, totalSteps) {
+  const steps = getWorkProcessSteps(work);
+  const previousStep = stepIndex > 0 ? steps[stepIndex - 1] : null;
+  const previousDone = previousStep ? Boolean(previousStep.done) : true;
+  const done = Boolean(step.done);
+  const blockedByOrder = !previousDone && !done;
+  const canUploadPdf = Boolean(step.can_upload_pdf);
+  const checkMeta = formatProcessCheckMeta(step);
+  const canManageProcess = user.role === "admin";
+  const isFinalStep = step.key === "installation_end";
+  const pdfHtml = canUploadPdf
+    ? `
+      <div class="process-pdf-links">
+        ${renderProcessAttachmentLinks(step)}
+      </div>
+      <div class="material-actions">
+        <div class="attachment-choice">
+          <label class="attachment-choice-btn">Escolher ficheiros<input type="file" class="process-file hidden" accept="application/pdf,image/*" multiple /></label>
+          <label class="attachment-choice-btn">Tirar foto<input type="file" class="process-camera-file hidden" accept="image/*" capture="environment" /></label>
+        </div>
+        <button type="button" class="upload-process-btn">Anexar</button>
+      </div>
+    `
+    : "";
+  return `
+    <div class="process-item" draggable="${canManageProcess ? "true" : "false"}" data-work-id="${work.id}" data-step-id="${step.id || ""}" data-step-key="${step.key || ""}">
+      <div class="process-step-head">
+        <span class="process-step-icon ${step.key ? "" : "custom"}">${processStepIcons[step.key] || "+"}</span>
+        <h4>${step.label}</h4>
+      </div>
+      ${canManageProcess ? `
+      <div class="process-item-tools">
+        <span class="process-drag-handle" aria-hidden="true" title="Arrasta para reordenar">::</span>
+        <span class="muted process-order-label">Posicao ${stepIndex + 1} de ${totalSteps}</span>
+        <button type="button" class="process-delete-btn" aria-label="Eliminar etapa">Eliminar</button>
+      </div>
+      ` : ""}
+      <button type="button" class="process-toggle-btn ${done ? "done" : ""}" ${blockedByOrder ? "disabled" : ""} aria-label="${done ? "Etapa feita" : "Marcar etapa como feita"}">
+        <span class="process-toggle-square" aria-hidden="true"></span>
+      </button>
+      ${checkMeta ? `<p class="muted process-check-meta">${escapeHtml(checkMeta)}</p>` : ""}
+      <p class="muted process-order-hint ${blockedByOrder ? "" : "hidden"}">Conclui a etapa anterior primeiro.</p>
+      ${pdfHtml}
+      ${isFinalStep ? `
+        <div class="final-step-upload">
+          <label><strong>Anexos de fim da obra</strong></label>
+          <p class="muted">Podes anexar várias fotografias finais ou ficheiros PDF.</p>
+          <div class="material-actions">
+            <div class="attachment-choice">
+              <label class="attachment-choice-btn">Escolher ficheiros<input type="file" class="final-attachment-file hidden" accept="application/pdf,image/*" multiple /></label>
+              <label class="attachment-choice-btn">Tirar foto<input type="file" class="final-camera-file hidden" accept="image/*" capture="environment" /></label>
+            </div>
+            <button type="button" class="upload-final-attachment-btn">Anexar</button>
+          </div>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function applyProcessSequenceUI(workItem) {
+  const processItems = Array.from(workItem.querySelectorAll(".process-item"));
+  let previousDone = true;
+
+  for (const item of processItems) {
+    const toggleButton = item.querySelector(".process-toggle-btn");
+    const hint = item.querySelector(".process-order-hint");
+    if (!toggleButton) continue;
+
+    const isChecked = toggleButton.classList.contains("done");
+    const blocked = !previousDone && !isChecked;
+    toggleButton.disabled = blocked;
+    if (hint) hint.classList.toggle("hidden", !blocked);
+    previousDone = isChecked;
+  }
+}
+
+function updateProcessItemFromWork(processItem, work) {
+  if (!processItem || !work) return;
+  const stepId = Number(processItem.dataset.stepId);
+  const stepKey = processItem.dataset.stepKey;
+  const step = getWorkProcessSteps(work).find((item) => {
+    if (stepId) return Number(item.id) === stepId;
+    return item.key && item.key === stepKey;
+  });
+  if (!step) return;
+
+  const doneButton = processItem.querySelector(".process-toggle-btn");
+  const done = Boolean(step.done);
+  if (doneButton) {
+    doneButton.classList.toggle("done", done);
+    doneButton.setAttribute("aria-label", done ? "Etapa feita" : "Marcar etapa como feita");
+  }
+
+  if (step.can_upload_pdf) {
+    const linksWrapper = processItem.querySelector(".process-pdf-links");
+    if (linksWrapper) {
+      linksWrapper.innerHTML = renderProcessAttachmentLinks(step);
+    }
+    const fileInput = processItem.querySelector(".process-file");
+    if (fileInput) fileInput.value = "";
+    const cameraInput = processItem.querySelector(".process-camera-file");
+    if (cameraInput) cameraInput.value = "";
+  }
+}
+
+function updateWorkCardFromWork(workItem, work) {
+  if (!workItem || !work) return;
+
+  const meta = workItem.querySelector(".work-summary-meta");
+  if (meta) {
+    meta.textContent = `Cliente: ${work.client_name || "Sem cliente"} | Estado: ${statusLabel(work.status)} | Prioridade: ${priorityLabel(work.priority)}`;
+  }
+
+  const statusSelect = workItem.querySelector(".work-status-select");
+  if (statusSelect) {
+    if (work.status) statusSelect.value = work.status;
+    statusSelect.disabled = user.role !== "admin";
+    syncWorkStatusOptions(statusSelect, work);
+  }
+
+  const saveStatusButton = workItem.querySelector(".save-work-status-btn");
+  if (saveStatusButton) {
+    saveStatusButton.disabled = user.role !== "admin";
+  }
+
+  const prioritySelect = workItem.querySelector(".work-priority-select");
+  if (prioritySelect) {
+    if (work.priority) prioritySelect.value = work.priority;
+    prioritySelect.disabled = user.role !== "admin";
+  }
+
+  const savePriorityButton = workItem.querySelector(".save-work-priority-btn");
+  if (savePriorityButton) {
+    savePriorityButton.disabled = user.role !== "admin";
+  }
+
+  const observationsInput = workItem.querySelector(".work-observations-input");
+  if (observationsInput) {
+    observationsInput.value = work.observations || "";
+  }
+}
+
+function syncWorkStatusOptions(statusSelect, work) {
+  if (!statusSelect || !work) return;
+  const steps = getWorkProcessSteps(work);
+  const canSetInProgress = !steps.length || Boolean(steps[0]?.done);
+  const inProgressOption = statusSelect.querySelector('option[value="in_progress"]');
+  if (inProgressOption) {
+    inProgressOption.disabled = !canSetInProgress;
+  }
+}
+
+function statusLabel(value) {
+  const found = statusOptions.find((status) => status.value === value);
+  return found ? found.label : value;
+}
+
+function priorityLabel(value) {
+  const found = priorityOptions.find((priority) => priority.value === value);
+  return found ? found.label : "Média";
+}
+
+function formatDateOnly(value, fallback = "Sem data") {
+  if (!value) return fallback;
+  const datePart = String(value).split(/[T ]/)[0];
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(datePart);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString("pt-PT");
+}
+
+function formatLogDate(value) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("pt-PT");
+}
+
+function formatLogAction(actionType) {
+  const labels = {
+    create_work: "Criou obra",
+    update_work_status: "Alterou estado da obra",
+    update_work_priority: "Alterou prioridade da obra",
+    update_work_observations: "Alterou observacoes da obra",
+    create_material: "Adicionou material",
+    update_material: "Alterou material",
+    upload_material_order_note_pdf: "Anexou nota de encomenda",
+    upload_material_pdf: "Anexou PDF do material",
+    upload_material_invoice_photo: "Anexou foto da fatura",
+    create_public_link: "Criou link de acompanhamento",
+    revoke_public_link: "Revogou link de acompanhamento",
+    delete_material: "Eliminou material",
+    create_process_step: "Adicionou etapa",
+    reorder_process_steps: "Moveu etapas",
+    delete_process_step: "Eliminou etapa",
+    update_process_step: "Alterou etapa",
+    upload_process_pdf: "Anexou PDF da etapa",
+    create_client: "Criou cliente",
+    create_user: "Criou utilizador",
+    delete_user: "Eliminou utilizador"
+  };
+  return labels[actionType] || actionType || "-";
+}
+
+function formatLogEntity(entityType) {
+  const labels = {
+    work: "Obra",
+    material: "Material",
+    process_step: "Etapa",
+    client: "Cliente",
+    user: "Utilizador"
+  };
+  return labels[entityType] || entityType || "-";
+}
+
+function formatLogDetails(details) {
+  if (!details) return "";
+  if (typeof details === "string") return details;
+  const labels = {
+    title: "Titulo",
+    status: "Estado",
+    priority: "Prioridade",
+    client_id: "ID cliente",
+    label: "Nome",
+    material_key: "Material",
+    step_key: "Etapa",
+    ordered: "Encomendado",
+    arrived: "Recebido",
+    pdf_path: "PDF",
+    invoice_photo_path: "Foto fatura",
+    note_encomenda_pdf_path: "Nota encomenda",
+    step_ids: "Nova ordem",
+    order_index: "Posicao",
+    observations: "Observações",
+    username: "Username",
+    role: "Role",
+    deleted_user_id: "ID utilizador eliminado",
+    deleted_username: "Utilizador eliminado",
+    deleted_role: "Role eliminada",
+    name: "Nome",
+    nif: "NIF",
+    address: "Morada",
+    phone: "Telefone",
+    email: "Email",
+    done: "Concluida"
+  };
+  return Object.entries(details)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .map(([key, value]) => {
+      const label = labels[key] || key;
+      const formattedValue = Array.isArray(value) ? value.join(" > ") : value;
+      return `${label}: ${formattedValue}`;
+    })
+    .join(" | ");
+}
+
+function renderWorks(items, target) {
+  if (!items.length) {
+    target.innerHTML = "<div class='empty-state'><strong>Sem obras neste estado</strong><span>Experimenta outro filtro ou adiciona uma nova obra.</span></div>";
+    return;
+  }
+  target.innerHTML = items
+    .map(
+      (w) => {
+        const materials = getWorkMaterials(w);
+        const processSteps = getWorkProcessSteps(w);
+        const completedSteps = processSteps.filter((step) => step.done).length;
+        const progressPercent = processSteps.length
+          ? Math.round((completedSteps / processSteps.length) * 100)
+          : 0;
+        return `
+      <article class="work-item" data-work-id="${w.id}">
+        <button type="button" class="work-summary-btn">
+          <span class="work-summary-main">
+            <strong class="work-summary-title">${escapeHtml(w.title)}</strong>
+            <span class="work-summary-client">${escapeHtml(w.client_name || "Sem cliente")}</span>
+            ${Array.isArray(w.groups) && w.groups.length ? `<span class="muted">${w.groups.length} grupo(s): ${w.groups.map((group) => escapeHtml(group.title)).join(", ")}</span>` : ""}
+          </span>
+          <span class="work-summary-side">
+            <span class="work-summary-meta">${escapeHtml(statusLabel(w.status))} · Prioridade ${escapeHtml(priorityLabel(w.priority))}</span>
+            <span class="work-progress-label">${completedSteps} de ${processSteps.length} etapas</span>
+            <span class="work-progress" aria-label="Progresso: ${progressPercent}%">
+              <span class="work-progress-value" style="width: ${progressPercent}%"></span>
+            </span>
+          </span>
+        </button>
+        <div class="work-details hidden">
+          ${renderFinalAttachments(w) ? `<div class="final-attachment-preview">${renderFinalAttachments(w)}</div>` : ""}
+          <div class="work-config-row">
+            <div class="material-actions">
+              <label><strong>Estado da obra</strong></label>
+              <select class="work-status-select">
+                ${statusOptions
+                  .map((status) => `<option value="${status.value}" ${w.status === status.value ? "selected" : ""}>${status.label}</option>`)
+                  .join("")}
+              </select>
+              <button type="button" class="save-work-status-btn">Guardar estado</button>
+            </div>
+            <div class="material-actions">
+              <label><strong>Prioridade</strong></label>
+              <select class="work-priority-select">
+                ${priorityOptions
+                  .map((priority) => `<option value="${priority.value}" ${String(w.priority || "medium") === priority.value ? "selected" : ""}>${priority.label}</option>`)
+                  .join("")}
+              </select>
+              <button type="button" class="save-work-priority-btn">Guardar prioridade</button>
+            </div>
+          </div>
+          <div class="work-overview">
+            <div><span class="work-overview-label">Prazo</span><strong>${escapeHtml(formatDateOnly(w.due_date))}</strong></div>
+            <div><span class="work-overview-label">Progresso</span><strong>${completedSteps}/${processSteps.length} etapas</strong></div>
+          </div>
+          ${user.role === "admin" ? `
+          <div class="public-link-box">
+            <div>
+              <strong>Acompanhamento do cliente</strong>
+              <p class="muted">Link privado apenas com o progresso e as etapas desta obra.</p>
+              ${w.public_access_token ? `
+                <div class="public-link-copy-row">
+                  <input class="public-link-input" value="${escapeHtml(`${window.location.origin}/acompanhar.html#${w.public_access_token}`)}" readonly aria-label="Link de acompanhamento do cliente" />
+                  <button type="button" class="copy-public-link-btn">Copiar link</button>
+                </div>
+              ` : ""}
+            </div>
+            <div class="public-link-actions">
+              <button type="button" class="create-public-link-btn">${w.public_access_enabled ? "Criar novo link" : "Criar link"}</button>
+              ${w.public_access_enabled ? `<button type="button" class="revoke-public-link-btn">Revogar acesso</button>` : ""}
+            </div>
+          </div>
+          ` : ""}
+          ${w.description ? `<p class="work-description">${escapeHtml(w.description)}</p>` : ""}
+          <div class="detail-tabs">
+            <button type="button" class="detail-tab-btn active" data-detail-tab="materials">Materiais</button>
+            <button type="button" class="detail-tab-btn" data-detail-tab="process">Etapas do Processo</button>
+            <button type="button" class="detail-tab-btn" data-detail-tab="observations">Observações</button>
+          </div>
+          <div class="detail-panel detail-panel-materials">
+            ${user.role === "admin" ? `
+            <div class="material-editor-bar">
+              <input class="material-input" placeholder="Novo material..." />
+              <button type="button" class="add-material-btn">Adicionar material</button>
+            </div>
+            ` : ""}
+            <div class="materials-grid">
+              ${materials.map((material) => materialHtml(w, material)).join("")}
+            </div>
+          </div>
+          <div class="detail-panel detail-panel-process hidden">
+            ${user.role === "admin" ? `
+            <div class="process-editor-bar">
+              <input class="process-step-input" placeholder="Nova etapa..." />
+              <button type="button" class="add-process-step-btn">Adicionar etapa</button>
+            </div>
+            ` : ""}
+            <div class="process-grid">
+              ${processSteps.map((step, index) => processStepHtml(w, step, index, processSteps.length)).join("")}
+            </div>
+          </div>
+          <div class="detail-panel detail-panel-observations hidden">
+            <div class="work-observations-box">
+              <label><strong>Observações</strong></label>
+              <textarea class="work-observations-input" placeholder="Escreve aqui observações sobre esta obra...">${escapeHtml(w.observations || "")}</textarea>
+              <button type="button" class="save-work-observations-btn">Guardar observações</button>
+            </div>
+          </div>
+        </div>
+      </article>
+    `;
+      }
+    )
+    .join("");
+}
+
+function renderClients(items) {
+  if (!items.length) {
+    clientsList.innerHTML = "<div class='empty-state'><strong>Sem clientes</strong><span>Adiciona um cliente para começar.</span></div>";
+    return;
+  }
+  clientsList.innerHTML = items
+    .map(
+      (c) => `
+      <article class="client-item client-card" data-client-id="${c.id}" tabindex="0" role="button" aria-label="Abrir cliente ${escapeHtml(c.name)}">
+        <div class="entity-card-head">
+          <div class="entity-avatar" aria-hidden="true">${escapeHtml(String(c.name || "?").charAt(0).toUpperCase())}</div>
+          <div><h3>${escapeHtml(c.name)}</h3><span class="muted">Cliente</span></div>
+        </div>
+        <dl class="entity-details">
+          <div><dt>NIF</dt><dd>${escapeHtml(c.nif || "—")}</dd></div>
+          <div><dt>Telefone</dt><dd>${escapeHtml(c.phone || "—")}</dd></div>
+          <div><dt>Email</dt><dd>${escapeHtml(c.email || "—")}</dd></div>
+          <div class="entity-detail-wide"><dt>Morada</dt><dd>${escapeHtml(c.address || "—")}</dd></div>
+        </dl>
+        ${c.notes ? `<p class="entity-note">${escapeHtml(c.notes)}</p>` : ""}
+      </article>
+    `
+    )
+    .join("");
+}
+
+function renderClientDetail(client) {
+  const works = Array.isArray(client.works) ? client.works : [];
+  clientDetailContent.innerHTML = `
+    <div class="client-detail-header">
+      <div class="entity-card-head"><div class="entity-avatar">${escapeHtml(String(client.name || "?").charAt(0).toUpperCase())}</div><div><h2>${escapeHtml(client.name)}</h2><span class="muted">Ficha do cliente</span></div></div>
+      ${user.role === "admin" ? `<button type="button" class="danger-btn delete-client-btn">Eliminar cliente</button>` : ""}
+    </div>
+    <form id="client-edit-form" class="panel-form client-detail-form" data-client-id="${client.id}">
+      <div class="form-grid">
+        <div><label>Nome</label><input name="name" value="${escapeHtml(client.name || "")}" required></div>
+        <div><label>Telefone</label><input name="phone" value="${escapeHtml(client.phone || "")}"></div>
+        <div><label>Email</label><input name="email" type="email" value="${escapeHtml(client.email || "")}"></div>
+        <div><label>Morada</label><input name="address" value="${escapeHtml(client.address || "")}"></div>
+        <div><label>NIF</label><input name="nif" inputmode="numeric" maxlength="9" value="${escapeHtml(client.nif || "")}"></div>
+      </div>
+      ${user.role === "admin" ? `<div class="form-actions"><button type="submit">Guardar alterações</button></div>` : ""}
+    </form>
+    <div class="client-works-heading"><h3>Obras associadas</h3><span class="muted">${works.length} ${works.length === 1 ? "obra" : "obras"}</span></div>
+    <div class="client-works-list">
+      ${works.length ? works.map((work) => `<article class="client-work-row" data-work-id="${work.id}" tabindex="0" role="button" aria-label="Abrir obra ${escapeHtml(work.title)}"><div><strong>${escapeHtml(work.title)}</strong><span>${escapeHtml(statusLabel(work.status))} · Prioridade ${escapeHtml(priorityLabel(work.priority))}</span><span>${escapeHtml(formatDateOnly(work.due_date, "Sem prazo definido"))}</span></div><div class="client-work-actions"><span class="open-work-label">Abrir obra &rarr;</span>${user.role === "admin" ? `<button type="button" class="danger-btn delete-client-work-btn">Eliminar obra</button>` : ""}</div></article>`).join("") : `<div class="empty-state"><strong>Sem obras associadas</strong><span>Este cliente ainda não tem obras.</span></div>`}
+    </div>`;
+  document.querySelectorAll("#client-edit-form input").forEach((input) => { input.disabled = user.role !== "admin"; });
+}
+
+async function openClientDetail(clientId) {
+  clientDetailContent.innerHTML = "<p class='muted'>A carregar cliente...</p>";
+  setActiveTab("client-detail");
+  try { renderClientDetail(await api(`/api/clients/${clientId}`)); }
+  catch (error) { clientDetailContent.innerHTML = `<p class="muted">${escapeHtml(error.message)}</p>`; }
+}
+
+async function openWorkFromClient(workId) {
+  worksFilterStatus = "";
+  worksFilterClient = "";
+  worksFilterClientId = "";
+  updateStatusFilterButtons();
+  setActiveTab("works");
+  await refreshWorksView({ workId });
+}
+
+function renderUsers(items) {
+  if (!usersList) return;
+  if (!items.length) {
+    usersList.innerHTML = "<div class='empty-state'><strong>Sem utilizadores</strong><span>Cria um utilizador para permitir o acesso.</span></div>";
+    return;
+  }
+
+  usersList.innerHTML = items
+    .map((u) => {
+      const canDelete = Number(u.id) !== Number(user.id);
+      return `
+      <article class="user-item">
+        <div class="entity-card-head">
+          <div class="entity-avatar" aria-hidden="true">${escapeHtml(String(u.username || "?").charAt(0).toUpperCase())}</div>
+          <div>
+          <h3>${escapeHtml(u.username || "-")}</h3>
+          <p class="muted user-role">${escapeHtml(u.role || "-")}</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          class="delete-user-btn"
+          data-user-id="${u.id}"
+          ${canDelete ? "" : "disabled"}
+          title="${canDelete ? "Eliminar utilizador" : "Nao podes eliminar o teu utilizador"}"
+          aria-label="Eliminar utilizador"
+        >
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z" fill="currentColor"></path>
+          </svg>
+        </button>
+      </article>
+    `;
+    })
+    .join("");
+}
+
+function renderLogs(items) {
+  if (!logsList) return;
+  if (!items.length) {
+    logsList.innerHTML = "<div class='empty-state'><strong>Sem atividade</strong><span>As ações realizadas na aplicação aparecerão aqui.</span></div>";
+    return;
+  }
+
+  logsList.innerHTML = items
+    .map(
+      (item) => `
+      <article class="log-item">
+        <div class="log-marker" aria-hidden="true"></div>
+        <div class="log-content">
+          <div class="log-head"><h3>${escapeHtml(formatLogAction(item.action_type))}</h3><time>${escapeHtml(formatLogDate(item.created_at))}</time></div>
+          <p><strong>${escapeHtml(item.username || "Sistema")}</strong> · ${escapeHtml(item.user_role || "-")}</p>
+          <p>${escapeHtml(formatLogEntity(item.entity_type))} · ${escapeHtml(item.work_title || "Sem obra associada")}</p>
+          ${formatLogDetails(item.details) ? `<p class="log-details">${escapeHtml(formatLogDetails(item.details))}</p>` : ""}
+        </div>
+      </article>
+    `
+    )
+    .join("");
+}
+
+function renderClientOptions(items) {
+  const counts = new Map();
+  for (const client of items) {
+    const name = String(client.name || "").trim();
+    if (!name) continue;
+    counts.set(name, (counts.get(name) || 0) + 1);
+  }
+
+  clientNameToId.clear();
+  clientByNormalizedName = new Map();
+  clientAutocompleteItems = items
+    .map((client) => {
+      const name = String(client.name || "").trim();
+      if (!name) return null;
+      const label = counts.get(name) > 1 ? `${name} (ID: ${client.id})` : name;
+      const clientId = String(client.id);
+      clientNameToId.set(label, clientId);
+      const normalized = name.toLowerCase();
+      if (!clientByNormalizedName.has(normalized)) {
+        clientByNormalizedName.set(normalized, []);
+      }
+      clientByNormalizedName.get(normalized).push(clientId);
+      return { id: clientId, name, label, search: label.toLowerCase() };
+    })
+    .filter(Boolean);
+
+  renderClientMenu(workClientNameInput.value);
+  renderWorksClientSearchMenu(worksClientSearchInput.value);
+  renderClientsSearchMenu(clientsSearchInput?.value || "");
+}
+
+function syncClientIdFromInput() {
+  const typedName = workClientNameInput.value.trim();
+  const clientId = clientNameToId.get(typedName);
+  workClientIdInput.value = clientId || "";
+}
+
+function resolveClientIdFromTypedName() {
+  const typed = workClientNameInput.value.trim();
+  if (!typed) return null;
+
+  const byExactLabel = clientNameToId.get(typed);
+  if (byExactLabel) return byExactLabel;
+
+  const matchesByName = clientByNormalizedName.get(typed.toLowerCase()) || [];
+  if (matchesByName.length === 1) return matchesByName[0];
+  if (matchesByName.length > 1) {
+    window.alert("Existem clientes com o mesmo nome. Escolhe um da lista.");
+    return "__ambiguous__";
+  }
+
+  const partialMatches = clientAutocompleteItems.filter((item) =>
+    item.search.includes(typed.toLowerCase())
+  );
+  if (partialMatches.length === 1) return partialMatches[0].id;
+  return null;
+}
+
+function renderClientMenu(term = "") {
+  const normalized = String(term).trim().toLowerCase();
+  const filtered = !normalized
+    ? clientAutocompleteItems
+    : clientAutocompleteItems.filter((item) => item.search.includes(normalized));
+
+  if (!filtered.length) {
+    workClientMenu.innerHTML = "<div class='autocomplete-empty'>Sem clientes com esse nome.</div>";
+    workClientMenu.classList.remove("hidden");
+    return;
+  }
+
+  workClientMenu.innerHTML = filtered
+    .map(
+      (item) => `
+      <button type="button" class="autocomplete-item" data-client-id="${item.id}" data-client-label="${escapeHtml(item.label)}">
+        ${escapeHtml(item.label)}
+      </button>
+    `
+    )
+    .join("");
+  workClientMenu.classList.remove("hidden");
+}
+
+function renderWorksClientSearchMenu(term = "") {
+  if (!worksClientSearchMenu) return;
+
+  const normalized = String(term).trim().toLowerCase();
+  const filtered = !normalized
+    ? clientAutocompleteItems
+    : clientAutocompleteItems.filter((item) => item.search.includes(normalized));
+
+  if (!filtered.length) {
+    worksClientSearchMenu.innerHTML = "<div class='autocomplete-empty'>Sem clientes com esse nome.</div>";
+    worksClientSearchMenu.classList.remove("hidden");
+    return;
+  }
+
+  worksClientSearchMenu.innerHTML = filtered
+    .map(
+      (item) => `
+      <button type="button" class="autocomplete-item works-client-option" data-client-id="${item.id}" data-client-label="${escapeHtml(item.label)}" data-client-name="${escapeHtml(item.name)}">
+        ${escapeHtml(item.label)}
+      </button>
+    `
+    )
+    .join("");
+  worksClientSearchMenu.classList.remove("hidden");
+}
+
+function renderClientsSearchMenu(term = "") {
+  if (!clientsSearchMenu) return;
+
+  const normalized = String(term).trim().toLowerCase();
+  const filtered = !normalized
+    ? clientAutocompleteItems
+    : clientAutocompleteItems.filter((item) => item.search.includes(normalized));
+
+  if (!filtered.length) {
+    clientsSearchMenu.innerHTML = "<div class='autocomplete-empty'>Sem clientes com esse nome.</div>";
+    clientsSearchMenu.classList.remove("hidden");
+    return;
+  }
+
+  clientsSearchMenu.innerHTML = filtered
+    .map(
+      (item) => `
+      <button type="button" class="autocomplete-item clients-option" data-client-id="${item.id}" data-client-label="${escapeHtml(item.label)}" data-client-name="${escapeHtml(item.name)}">
+        ${escapeHtml(item.label)}
+      </button>
+    `
+    )
+    .join("");
+  clientsSearchMenu.classList.remove("hidden");
+}
+
+function updateStatusFilterButtons() {
+  statusFilterButtons.forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.status === worksFilterStatus);
+  });
+}
+
+function buildWorksQuery() {
+  const params = new URLSearchParams();
+  if (worksFilterStatus) params.set("status", worksFilterStatus);
+  if (worksFilterClientId) params.set("client_id", worksFilterClientId);
+  if (worksFilterClient) params.set("client", worksFilterClient);
+  const query = params.toString();
+  return query ? `/api/works?${query}` : "/api/works";
+}
+
+function applyClientsFilter() {
+  if (!clientsFilterClientId && !clientsFilterTerm) {
+    renderClients(clientsCache);
+    return;
+  }
+
+  if (clientsFilterClientId) {
+    const filtered = clientsCache.filter((item) => String(item.id) === String(clientsFilterClientId));
+    renderClients(filtered);
+    return;
+  }
+
+  const normalized = clientsFilterTerm.toLowerCase();
+  const filtered = clientsCache.filter((item) =>
+    String(item.name || "").toLowerCase().includes(normalized)
+  );
+  renderClients(filtered);
+}
+
+async function loadWorksTab() {
+  const list = await api(buildWorksQuery());
+  worksCache = list || [];
+  if (workParentSelect) {
+    workParentSelect.innerHTML = `<option value="">Obra principal (sem grupo)</option>${worksCache.map((work) => `<option value="${work.id}">${escapeHtml(work.title)}</option>`).join("")}`;
+  }
+  renderWorks(list || [], worksList);
+  (list || []).forEach((work) => {
+    const workItem = worksList.querySelector(`.work-item[data-work-id="${work.id}"]`);
+    if (workItem) updateWorkCardFromWork(workItem, work);
+  });
+  worksList.querySelectorAll(".work-status-select, .save-work-status-btn, .work-priority-select, .save-work-priority-btn").forEach((element) => {
+    element.disabled = user.role !== "admin";
+  });
+}
+
+function reopenWorkDetails(workId, detailTab = null) {
+  if (!workId) return;
+  const workItem = worksList.querySelector(`.work-item[data-work-id="${workId}"]`);
+  const details = workItem?.querySelector(".work-details");
+  const summaryButton = workItem?.querySelector(".work-summary-btn");
+  if (!workItem || !details || !summaryButton) return;
+
+  details.classList.remove("hidden");
+  summaryButton.classList.add("expanded");
+
+  if (!detailTab) return;
+  const detailButton = workItem.querySelector(`.detail-tab-btn[data-detail-tab="${detailTab}"]`);
+  if (detailButton) {
+    detailButton.click();
+  }
+}
+
+async function refreshWorksView(options = {}) {
+  await loadWorksTab();
+  if (options.workId) {
+    reopenWorkDetails(options.workId, options.detailTab || null);
+  }
+}
+
+async function loadUsers() {
+  if (user.role !== "admin" || !usersList) return;
+  const list = await api("/api/users");
+  usersCache = list || [];
+  renderUsers(usersCache);
+}
+
+async function loadLogs() {
+  if (!logsList || user.role !== "admin") return;
+  try {
+    const params = new URLSearchParams({ limit: "200" });
+    if (logsFilterWork) params.set("work", logsFilterWork);
+    const list = await api(`/api/logs?${params.toString()}`);
+    logsCache = list || [];
+    renderLogs(logsCache);
+  } catch (_error) {
+    if (logsList) {
+      logsList.innerHTML = "<p class='muted'>Erro ao carregar logs.</p>";
+    }
+  }
+}
+
+if (logsSearchBtn) {
+  logsSearchBtn.addEventListener("click", async () => {
+    logsFilterWork = String(logsWorkSearchInput?.value || "").trim();
+    await loadLogs();
+  });
+}
+
+if (logsClearBtn) {
+  logsClearBtn.addEventListener("click", async () => {
+    logsFilterWork = "";
+    if (logsWorkSearchInput) logsWorkSearchInput.value = "";
+    await loadLogs();
+  });
+}
+
+if (logsWorkSearchInput) {
+  logsWorkSearchInput.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    logsFilterWork = String(logsWorkSearchInput.value || "").trim();
+    await loadLogs();
+  });
+}
+
+async function loadData() {
+  const promises = [loadWorksTab(), api("/api/clients"), loadLogs()];
+  if (user.role === "admin") {
+    promises.push(loadUsers());
+  }
+  const [worksResult, clientsResult, logsResult, usersResult] = await Promise.allSettled(promises);
+
+  if (clientsResult.status === "fulfilled") {
+    clientsCache = clientsResult.value || [];
+    renderClientOptions(clientsCache);
+    applyClientsFilter();
+  } else {
+    clientsList.innerHTML = "<p class='muted'>Erro ao carregar clientes.</p>";
+    clientsCache = [];
+    renderClientOptions([]);
+  }
+
+  if (worksResult.status === "rejected") {
+    worksList.innerHTML = "<p class='muted'>Erro ao carregar obras.</p>";
+  }
+
+  if (logsResult.status === "rejected" && logsList) {
+    logsList.innerHTML = "<p class='muted'>Erro ao carregar logs.</p>";
+  }
+
+  if (user.role === "admin" && usersResult?.status === "rejected" && usersList) {
+    usersList.innerHTML = "<p class='muted'>Erro ao carregar utilizadores.</p>";
+  }
+}
+
+clientForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = {
+    name: document.getElementById("client-name").value.trim(),
+    phone: document.getElementById("client-phone").value.trim(),
+    email: document.getElementById("client-email").value.trim(),
+    address: document.getElementById("client-address").value.trim(),
+    nif: document.getElementById("client-nif").value.trim(),
+    notes: document.getElementById("client-notes").value.trim()
+  };
+
+  try {
+    await api("/api/clients", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    clientForm.reset();
+    await loadData();
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+workForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  syncClientIdFromInput();
+  const resolvedClientId = workClientIdInput.value || resolveClientIdFromTypedName();
+  if (resolvedClientId === "__ambiguous__") return;
+  workClientIdInput.value = resolvedClientId || "";
+
+  const payload = {
+    title: document.getElementById("work-title").value.trim(),
+    status: document.getElementById("work-status").value,
+    priority: document.getElementById("work-priority").value,
+    client_id: workClientIdInput.value || null,
+    client_name: workClientNameInput.value.trim() || null,
+    due_date: document.getElementById("work-due-date").value || null,
+    description: document.getElementById("work-description").value.trim()
+    ,parent_work_id: workParentSelect?.value || null
+  };
+
+  try {
+    await api("/api/works", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+    workForm.reset();
+    workClientIdInput.value = "";
+    await loadData();
+    setActiveTab("works");
+  } catch (error) {
+    window.alert(error.message);
+  }
+});
+
+workClientNameInput.addEventListener("input", syncClientIdFromInput);
+workClientNameInput.addEventListener("change", syncClientIdFromInput);
+workClientNameInput.addEventListener("focus", () => {
+  renderClientMenu(workClientNameInput.value);
+});
+workClientNameInput.addEventListener("click", () => {
+  renderClientMenu(workClientNameInput.value);
+});
+workClientNameInput.addEventListener("input", () => {
+  renderClientMenu(workClientNameInput.value);
+});
+workClientMenu.addEventListener("click", (event) => {
+  const option = event.target.closest(".autocomplete-item");
+  if (!option) return;
+  const label = option.dataset.clientLabel || "";
+  const clientId = option.dataset.clientId || "";
+  workClientNameInput.value = label;
+  workClientIdInput.value = clientId;
+  workClientMenu.classList.add("hidden");
+});
+document.addEventListener("click", (event) => {
+  const insideClientInput = event.target.closest("#work-client-input") || event.target.closest("#work-client-menu");
+  if (!insideClientInput) {
+    workClientMenu.classList.add("hidden");
+  }
+
+  const insideWorksSearch =
+    event.target.closest("#works-client-search") ||
+    event.target.closest("#works-client-search-menu");
+  if (!insideWorksSearch && worksClientSearchMenu) {
+    worksClientSearchMenu.classList.add("hidden");
+  }
+
+  const insideClientsSearch =
+    event.target.closest("#clients-search") ||
+    event.target.closest("#clients-search-menu");
+  if (!insideClientsSearch && clientsSearchMenu) {
+    clientsSearchMenu.classList.add("hidden");
+  }
+});
+
+statusFilterButtons.forEach((button) => {
+  button.addEventListener("click", async () => {
+    worksFilterStatus = button.dataset.status || "";
+    updateStatusFilterButtons();
+    await loadWorksTab();
+  });
+});
+
+if (worksSearchBtn) {
+  worksSearchBtn.addEventListener("click", async () => {
+    const typed = String(worksClientSearchInput.value || "").trim();
+    const selectedId = clientNameToId.get(typed);
+    worksFilterClientId = selectedId || "";
+    worksFilterClient = selectedId ? "" : typed;
+    if (worksClientSearchMenu) worksClientSearchMenu.classList.add("hidden");
+    await loadWorksTab();
+  });
+}
+
+if (worksClearBtn) {
+  worksClearBtn.addEventListener("click", async () => {
+    worksFilterStatus = "in_progress";
+    worksFilterClient = "";
+    worksFilterClientId = "";
+    worksClientSearchInput.value = "";
+    if (worksClientSearchMenu) worksClientSearchMenu.classList.add("hidden");
+    updateStatusFilterButtons();
+    await loadWorksTab();
+  });
+}
+
+if (worksClientSearchInput) {
+  worksClientSearchInput.addEventListener("focus", () => {
+    renderWorksClientSearchMenu(worksClientSearchInput.value);
+  });
+  worksClientSearchInput.addEventListener("click", () => {
+    renderWorksClientSearchMenu(worksClientSearchInput.value);
+  });
+  worksClientSearchInput.addEventListener("input", () => {
+    worksFilterClientId = "";
+    renderWorksClientSearchMenu(worksClientSearchInput.value);
+  });
+  worksClientSearchInput.addEventListener("keydown", async (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const typed = String(worksClientSearchInput.value || "").trim();
+    const selectedId = clientNameToId.get(typed);
+    worksFilterClientId = selectedId || "";
+    worksFilterClient = selectedId ? "" : typed;
+    if (worksClientSearchMenu) worksClientSearchMenu.classList.add("hidden");
+    await loadWorksTab();
+  });
+}
+
+if (worksClientSearchMenu) {
+  worksClientSearchMenu.addEventListener("click", async (event) => {
+    const option = event.target.closest(".works-client-option");
+    if (!option) return;
+    const clientLabel = option.dataset.clientLabel || option.dataset.clientName || "";
+    const clientId = option.dataset.clientId || "";
+    worksClientSearchInput.value = clientLabel;
+    worksFilterClientId = clientId;
+    worksFilterClient = "";
+    worksClientSearchMenu.classList.add("hidden");
+    await loadWorksTab();
+  });
+}
+
+if (clientsSearchBtn) {
+  clientsSearchBtn.addEventListener("click", () => {
+    const typed = String(clientsSearchInput?.value || "").trim();
+    const selectedId = clientNameToId.get(typed);
+    clientsFilterClientId = selectedId || "";
+    clientsFilterTerm = selectedId ? "" : typed;
+    if (clientsSearchMenu) clientsSearchMenu.classList.add("hidden");
+    applyClientsFilter();
+  });
+}
+
+if (clientsClearBtn) {
+  clientsClearBtn.addEventListener("click", () => {
+    clientsFilterClientId = "";
+    clientsFilterTerm = "";
+    if (clientsSearchInput) clientsSearchInput.value = "";
+    if (clientsSearchMenu) clientsSearchMenu.classList.add("hidden");
+    applyClientsFilter();
+  });
+}
+
+if (clientsSearchInput) {
+  clientsSearchInput.addEventListener("focus", () => {
+    renderClientsSearchMenu(clientsSearchInput.value);
+  });
+  clientsSearchInput.addEventListener("click", () => {
+    renderClientsSearchMenu(clientsSearchInput.value);
+  });
+  clientsSearchInput.addEventListener("input", () => {
+    clientsFilterClientId = "";
+    clientsFilterTerm = String(clientsSearchInput.value || "").trim();
+    renderClientsSearchMenu(clientsSearchInput.value);
+    applyClientsFilter();
+  });
+  clientsSearchInput.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const typed = String(clientsSearchInput.value || "").trim();
+    const selectedId = clientNameToId.get(typed);
+    clientsFilterClientId = selectedId || "";
+    clientsFilterTerm = selectedId ? "" : typed;
+    if (clientsSearchMenu) clientsSearchMenu.classList.add("hidden");
+    applyClientsFilter();
+  });
+}
+
+if (clientsSearchMenu) {
+  clientsSearchMenu.addEventListener("click", (event) => {
+    const option = event.target.closest(".clients-option");
+    if (!option) return;
+    const clientLabel = option.dataset.clientLabel || option.dataset.clientName || "";
+    const clientId = option.dataset.clientId || "";
+    if (clientsSearchInput) clientsSearchInput.value = clientLabel;
+    clientsFilterClientId = clientId;
+    clientsFilterTerm = "";
+    clientsSearchMenu.classList.add("hidden");
+    applyClientsFilter();
+  });
+}
+
+if (clientDetailBack) clientDetailBack.addEventListener("click", () => setActiveTab("clients"));
+
+if (clientsList) {
+  const openSelectedClient = (event) => {
+    const card = event.target.closest(".client-item[data-client-id]");
+    if (!card || (event.type === "keydown" && !["Enter", " "].includes(event.key))) return;
+    if (event.type === "keydown") event.preventDefault();
+    openClientDetail(card.dataset.clientId);
+  };
+  clientsList.addEventListener("click", openSelectedClient);
+  clientsList.addEventListener("keydown", openSelectedClient);
+}
+
+if (clientDetailContent) {
+  clientDetailContent.addEventListener("submit", async (event) => {
+    const form = event.target.closest("#client-edit-form");
+    if (!form) return;
+    event.preventDefault();
+    try {
+      await api(`/api/clients/${form.dataset.clientId}`, { method: "PATCH", body: JSON.stringify(Object.fromEntries(new FormData(form).entries())) });
+      await loadData();
+      await openClientDetail(form.dataset.clientId);
+    } catch (error) { window.alert(error.message); }
+  });
+  clientDetailContent.addEventListener("click", async (event) => {
+    const form = document.getElementById("client-edit-form");
+    const clientId = form?.dataset.clientId;
+    if (!clientId) return;
+    if (event.target.closest(".delete-client-work-btn")) {
+      const row = event.target.closest(".client-work-row");
+      if (!window.confirm("Tem a certeza que quer eliminar esta obra? Esta ação é definitiva.")) return;
+      try { await api(`/api/works/${row.dataset.workId}`, { method: "DELETE" }); await openClientDetail(clientId); await loadData(); }
+      catch (error) { window.alert(error.message); }
+      return;
+    }
+    if (event.target.closest(".delete-client-btn")) {
+      if (!window.confirm("Eliminar este cliente e todas as obras associadas? Esta ação é definitiva.")) return;
+      try { await api(`/api/clients/${clientId}`, { method: "DELETE" }); await loadData(); setActiveTab("clients"); }
+      catch (error) { window.alert(error.message); }
+      return;
+    }
+    const workRow = event.target.closest(".client-work-row[data-work-id]");
+    if (workRow) openWorkFromClient(workRow.dataset.workId);
+  });
+  clientDetailContent.addEventListener("keydown", (event) => {
+    const workRow = event.target.closest(".client-work-row[data-work-id]");
+    if (!workRow || !["Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    openWorkFromClient(workRow.dataset.workId);
+  });
+}
+
+if (userForm) {
+  userForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      username: document.getElementById("user-username").value.trim(),
+      password: document.getElementById("user-password").value,
+      role: document.getElementById("user-role").value
+    };
+
+    try {
+      await api("/api/users", {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      userForm.reset();
+      await loadUsers();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  });
+}
+
+if (usersList) {
+  usersList.addEventListener("click", async (event) => {
+    const button = event.target.closest(".delete-user-btn");
+    if (!button || button.disabled) return;
+
+    const userId = Number(button.dataset.userId);
+    if (!Number.isInteger(userId) || userId <= 0) return;
+
+    const confirmed = window.confirm("Tem certeza que quer eliminar este utilizador?");
+    if (!confirmed) return;
+
+    button.disabled = true;
+    try {
+      await api(`/api/users/${userId}`, { method: "DELETE" });
+      await loadUsers();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error.message);
+    }
+  });
+}
+
+async function handleWorksInteraction(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+
+  const workItem = button.closest(".work-item");
+  if (button.classList.contains("upload-final-attachment-btn")) {
+    const input = workItem?.querySelector(".final-attachment-file");
+    const cameraInput = workItem?.querySelector(".final-camera-file");
+    const files = input?.files?.length ? Array.from(input.files) : Array.from(cameraInput?.files || []);
+    if (!workItem || !files.length) { window.alert("Seleciona um ou mais PDFs ou imagens."); return; }
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workItem.dataset.workId}/final-attachment`, { method: "POST", body: formData });
+      await refreshWorksView({ workId: workItem.dataset.workId });
+      await loadLogs();
+    } catch (error) { window.alert(error.message); }
+    finally { button.disabled = false; }
+    return;
+  }
+  if (button.classList.contains("create-public-link-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    button.disabled = true;
+    try {
+      const result = await api(`/api/works/${workId}/public-link`, { method: "POST" });
+      try {
+        await navigator.clipboard.writeText(result.link);
+        window.alert("Link criado e copiado. Envia-o ao cliente.");
+      } catch (_error) {
+        window.prompt("Copia este link e envia-o ao cliente:", result.link);
+      }
+      await refreshWorksView({ workId });
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("copy-public-link-btn")) {
+    const linkInput = workItem?.querySelector(".public-link-input");
+    if (!linkInput) return;
+    try {
+      await navigator.clipboard.writeText(linkInput.value);
+      window.alert("Link copiado.");
+    } catch (_error) {
+      linkInput.select();
+      window.prompt("Copia este link:", linkInput.value);
+    }
+    return;
+  }
+
+  if (button.classList.contains("revoke-public-link-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    if (!window.confirm("Revogar o acesso do cliente a esta obra?")) return;
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/public-link`, { method: "DELETE" });
+      await refreshWorksView({ workId });
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error.message);
+    }
+    return;
+  }
+
+  if (button.classList.contains("add-material-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    const input = workItem.querySelector(".material-input");
+    const label = input?.value.trim() || "";
+    if (!workId || !input) return;
+    if (!label) {
+      window.alert("Escreve o nome do novo material.");
+      return;
+    }
+
+    button.disabled = true;
+    input.disabled = true;
+    try {
+      await api(`/api/works/${workId}/materials`, {
+        method: "POST",
+        body: JSON.stringify({ label })
+      });
+      await refreshWorksView({ workId, detailTab: "materials" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+      input.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("add-process-step-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    const input = workItem.querySelector(".process-step-input");
+    const label = input?.value.trim() || "";
+    if (!workId || !input) return;
+    if (!label) {
+      window.alert("Escreve o nome da nova etapa.");
+      return;
+    }
+
+    button.disabled = true;
+    input.disabled = true;
+    try {
+      await api(`/api/works/${workId}/process`, {
+        method: "POST",
+        body: JSON.stringify({ label })
+      });
+      await refreshWorksView({ workId, detailTab: "process" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+      input.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("save-work-status-btn")) {
+    await saveWorkStatus(workItem, button);
+    return;
+  }
+
+  const materialItem = button.closest(".material-item");
+  if (materialItem) {
+    const workId = materialItem.dataset.workId;
+    const materialId = materialItem.dataset.materialId;
+    const materialKey = materialItem.dataset.materialKey;
+    if (!workId || (!materialId && !materialKey)) return;
+
+    if (button.classList.contains("upload-material-order-note-btn")) {
+      const input = materialItem.querySelector(".material-order-note-file");
+      const cameraInput = materialItem.querySelector(".material-order-note-camera");
+      const file = input?.files?.[0] || cameraInput?.files?.[0];
+      if (!materialId) { window.alert("Guarda primeiro o material antes de anexar."); return; }
+      if (!file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
+      const formData = new FormData();
+      formData.append("file", file);
+      button.disabled = true;
+      try {
+        await api(`/api/works/${workId}/materials/item/${materialId}/order-note-pdf`, { method: "POST", body: formData });
+        await refreshWorksView({ workId, detailTab: "materials" });
+        await loadLogs();
+      } catch (error) { window.alert(error.message); }
+      finally { button.disabled = false; }
+      return;
+    }
+
+    if (button.classList.contains("upload-material-receipt-btn")) {
+      const input = materialItem.querySelector(".material-invoice-file");
+      const cameraInput = materialItem.querySelector(".material-invoice-camera");
+      const file = input?.files?.[0] || cameraInput?.files?.[0];
+      if (!materialId) { window.alert("Guarda primeiro o material antes de anexar."); return; }
+      if (!file) { window.alert("Seleciona um PDF ou uma imagem."); return; }
+      const formData = new FormData();
+      formData.append("file", file);
+      button.disabled = true;
+      try {
+        await api(`/api/works/${workId}/materials/item/${materialId}/invoice-photo`, { method: "POST", body: formData });
+        await refreshWorksView({ workId, detailTab: "materials" });
+        await loadLogs();
+      } catch (error) { window.alert(error.message); }
+      finally { button.disabled = false; }
+      return;
+    }
+
+    if (button.classList.contains("material-delete-btn")) {
+      const confirmed = window.confirm("Tem a certeza que quer eliminar este material?");
+      if (!confirmed) return;
+
+      button.disabled = true;
+      try {
+        await api(`/api/works/${workId}/materials/item/${materialId}`, {
+          method: "DELETE"
+        });
+        await refreshWorksView({ workId, detailTab: "materials" });
+        await loadLogs();
+      } catch (error) {
+        window.alert(error.message);
+      } finally {
+        button.disabled = false;
+      }
+      return;
+    }
+
+  }
+
+  const processItem = button.closest(".process-item");
+  if (processItem && button.classList.contains("process-delete-btn")) {
+    const workId = processItem.dataset.workId;
+    const stepId = processItem.dataset.stepId;
+    if (!workId || !stepId) return;
+
+    const confirmed = window.confirm("Tem a certeza que quer eliminar esta etapa?");
+    if (!confirmed) return;
+
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/process/item/${stepId}`, {
+        method: "DELETE"
+      });
+      await refreshWorksView({ workId, detailTab: "process" });
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (processItem && button.classList.contains("upload-process-btn")) {
+    const workId = processItem.dataset.workId;
+    const stepKey = processItem.dataset.stepKey;
+    const input = processItem.querySelector(".process-file");
+    const cameraInput = processItem.querySelector(".process-camera-file");
+    const files = input?.files?.length ? Array.from(input.files) : Array.from(cameraInput?.files || []);
+    if (!workId || !stepKey) return;
+    if (!files.length) {
+      window.alert("Seleciona um ou mais PDFs ou imagens.");
+      return;
+    }
+    if (files.some((file) => file.type !== "application/pdf" && !String(file.type || "").startsWith("image/"))) {
+      window.alert("Só são permitidos ficheiros PDF ou imagens.");
+      return;
+    }
+
+    const formData = new FormData();
+    files.forEach((file) => formData.append("files", file));
+    button.disabled = true;
+    try {
+      const updatedWork = await api(`/api/works/${workId}/process/${stepKey}/upload`, {
+        method: "POST",
+        body: formData
+      });
+      updateProcessItemFromWork(processItem, updatedWork);
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("save-work-priority-btn")) {
+    if (user.role !== "admin") return;
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    const prioritySelect = workItem.querySelector(".work-priority-select");
+    if (!workId || !prioritySelect) return;
+
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/priority`, {
+        method: "PATCH",
+        body: JSON.stringify({ priority: prioritySelect.value })
+      });
+      await loadWorksTab();
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      button.disabled = false;
+    }
+    return;
+  }
+
+  if (button.classList.contains("save-work-observations-btn")) {
+    if (!workItem) return;
+    const workId = workItem.dataset.workId;
+    const observationsInput = workItem.querySelector(".work-observations-input");
+    if (!workId || !observationsInput) return;
+
+    button.disabled = true;
+    observationsInput.disabled = true;
+    try {
+      const updatedWork = await api(`/api/works/${workId}/observations`, {
+        method: "PATCH",
+        body: JSON.stringify({ observations: observationsInput.value })
+      });
+      updateWorkCardFromWork(workItem, updatedWork);
+      await loadLogs();
+    } catch (error) {
+      window.alert(error.message);
+    } finally {
+      observationsInput.disabled = false;
+      button.disabled = false;
+    }
+    return;
+  }
+}
+
+async function saveWorkStatus(workItem, triggerButton = null) {
+  if (!workItem) return;
+  if (user.role !== "admin") return;
+
+  const workId = workItem.dataset.workId;
+  const statusSelect = workItem.querySelector(".work-status-select");
+  if (!workId || !statusSelect) return;
+
+  const saveButton = triggerButton || workItem.querySelector(".save-work-status-btn");
+  if (saveButton) saveButton.disabled = true;
+  statusSelect.disabled = true;
+
+  try {
+    const updatedWork = await api(`/api/works/${workId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status: statusSelect.value })
+    });
+    updateWorkCardFromWork(workItem, updatedWork);
+    await loadWorksTab();
+    await loadLogs();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    statusSelect.disabled = false;
+    if (saveButton) saveButton.disabled = false;
+  }
+}
+
+async function handleMaterialCheckboxChange(event) {
+  const changedInput = event.target.closest(".material-ordered, .material-arrived");
+  if (!changedInput || !changedInput.classList.contains("material-toggle-btn")) return;
+
+  const materialItem = changedInput.closest(".material-item");
+  if (!materialItem) return;
+
+  const workId = materialItem.dataset.workId;
+  const materialId = materialItem.dataset.materialId;
+  const materialKey = materialItem.dataset.materialKey;
+  const orderedInput = materialItem.querySelector(".material-ordered");
+  const arrivedInput = materialItem.querySelector(".material-arrived");
+  if (!workId || (!materialId && !materialKey) || !orderedInput || !arrivedInput) return;
+
+  const isOrderedToggle = changedInput.classList.contains("material-ordered");
+  const isArrivedToggle = changedInput.classList.contains("material-arrived");
+  const ordered = isOrderedToggle ? !orderedInput.classList.contains("done") : orderedInput.classList.contains("done");
+  const arrived = isArrivedToggle ? !arrivedInput.classList.contains("done") : arrivedInput.classList.contains("done");
+  orderedInput.disabled = true;
+  arrivedInput.disabled = true;
+  try {
+    const endpoint = materialId
+      ? `/api/works/${workId}/materials/item/${materialId}`
+      : `/api/works/${workId}/materials/${materialKey}`;
+    const updatedWork = await api(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify({ ordered, arrived })
+    });
+    updateMaterialItemFromWork(materialItem, updatedWork);
+    await loadLogs();
+  } catch (error) {
+    window.alert(error.message);
+  } finally {
+    orderedInput.disabled = false;
+    arrivedInput.disabled = false;
+  }
+}
+
+async function handleProcessCheckboxChange(event) {
+  const toggleButton = event.target.closest(".process-toggle-btn");
+  if (!toggleButton) return;
+
+  const processItem = toggleButton.closest(".process-item");
+  const workItem = toggleButton.closest(".work-item");
+  if (!processItem || !workItem) return;
+
+  const workId = processItem.dataset.workId;
+  const stepId = processItem.dataset.stepId;
+  const stepKey = processItem.dataset.stepKey;
+  if (!workId || (!stepId && !stepKey)) return;
+
+  const nextDone = !toggleButton.classList.contains("done");
+  const previousValue = !nextDone;
+  toggleButton.disabled = true;
+
+  try {
+    const endpoint = stepId
+      ? `/api/works/${workId}/process/item/${stepId}`
+      : `/api/works/${workId}/process/${stepKey}`;
+    const updatedWork = await api(endpoint, {
+      method: "PATCH",
+      body: JSON.stringify({ done: nextDone })
+    });
+    updateProcessItemFromWork(processItem, updatedWork);
+    updateWorkCardFromWork(workItem, updatedWork);
+    applyProcessSequenceUI(workItem);
+    await refreshWorksView({ workId, detailTab: "process" });
+    await loadLogs();
+  } catch (error) {
+    toggleButton.classList.toggle("done", previousValue);
+    toggleButton.setAttribute("aria-label", previousValue ? "Etapa feita" : "Marcar etapa como feita");
+    applyProcessSequenceUI(workItem);
+    window.alert(error.message);
+  } finally {
+    toggleButton.disabled = false;
+  }
+}
+
+async function handleWorkStatusChange(event) {
+  const statusSelect = event.target.closest(".work-status-select");
+  if (!statusSelect) return;
+
+  const workItem = statusSelect.closest(".work-item");
+  await saveWorkStatus(workItem);
+}
+
+function handleWorkToggle(event) {
+  const detailTabButton = event.target.closest(".detail-tab-btn");
+  if (detailTabButton) {
+    const details = detailTabButton.closest(".work-details");
+    if (!details) return;
+    const tab = detailTabButton.dataset.detailTab;
+    details.querySelectorAll(".detail-tab-btn").forEach((btn) => {
+      btn.classList.toggle("active", btn === detailTabButton);
+    });
+    details.querySelector(".detail-panel-materials")?.classList.toggle("hidden", tab !== "materials");
+    details.querySelector(".detail-panel-process")?.classList.toggle("hidden", tab !== "process");
+    details.querySelector(".detail-panel-observations")?.classList.toggle("hidden", tab !== "observations");
+    return;
+  }
+
+  const summaryButton = event.target.closest(".work-summary-btn");
+  if (!summaryButton) return;
+
+  const workItem = summaryButton.closest(".work-item");
+  const details = workItem?.querySelector(".work-details");
+  if (!details) return;
+  const shouldOpen = details.classList.contains("hidden");
+
+  worksList.querySelectorAll(".work-item").forEach((item) => {
+    const itemDetails = item.querySelector(".work-details");
+    const itemSummaryButton = item.querySelector(".work-summary-btn");
+    if (!itemDetails || !itemSummaryButton) return;
+    if (item === workItem && shouldOpen) return;
+    itemDetails.classList.add("hidden");
+    itemSummaryButton.classList.remove("expanded");
+  });
+
+  details.classList.toggle("hidden");
+  summaryButton.classList.toggle("expanded", !details.classList.contains("hidden"));
+}
+
+function handleProcessStepInputKeydown(event) {
+  if (user.role !== "admin") return;
+  const materialInput = event.target.closest(".material-input");
+  if (materialInput && event.key === "Enter") {
+    event.preventDefault();
+    const workItem = materialInput.closest(".work-item");
+    const addButton = workItem?.querySelector(".add-material-btn");
+    if (addButton) addButton.click();
+    return;
+  }
+
+  const input = event.target.closest(".process-step-input");
+  if (!input || event.key !== "Enter") return;
+  event.preventDefault();
+  const workItem = input.closest(".work-item");
+  const addButton = workItem?.querySelector(".add-process-step-btn");
+  if (addButton) addButton.click();
+}
+
+function handleAttachmentChoiceChange(event) {
+  const input = event.target.closest(".attachment-choice input[type='file']");
+  if (!input) return;
+  const choice = input.closest(".attachment-choice");
+  choice.querySelectorAll("input[type='file']").forEach((otherInput) => {
+    if (otherInput !== input) otherInput.value = "";
+    otherInput.closest(".attachment-choice-btn")?.classList.toggle("selected", otherInput === input && Boolean(input.files?.length));
+  });
+}
+
+async function persistProcessStepOrder(workItem) {
+  const workId = workItem?.dataset.workId;
+  const processGrid = workItem?.querySelector(".process-grid");
+  if (!workId || !processGrid) return;
+
+  const reorderedIds = Array.from(processGrid.querySelectorAll(".process-item"))
+    .map((item) => Number(item.dataset.stepId))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (!reorderedIds.length) return;
+
+  await api(`/api/works/${workId}/process/reorder`, {
+    method: "PATCH",
+    body: JSON.stringify({ stepIds: reorderedIds })
+  });
+  await refreshWorksView({ workId, detailTab: "process" });
+  await loadLogs();
+}
+
+function handleProcessDragStart(event) {
+  if (user.role !== "admin") return;
+  const processItem = event.target.closest(".process-item");
+  if (!processItem) return;
+
+  draggedProcessStepId = processItem.dataset.stepId || null;
+  processItem.classList.add("dragging");
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", draggedProcessStepId || "");
+  }
+}
+
+function handleProcessDragOver(event) {
+  if (user.role !== "admin") return;
+  const processItem = event.target.closest(".process-item");
+  if (!processItem || !draggedProcessStepId) return;
+
+  event.preventDefault();
+  const processGrid = processItem.closest(".process-grid");
+  const draggingItem = processGrid?.querySelector(`.process-item[data-step-id="${draggedProcessStepId}"]`);
+  if (!processGrid || !draggingItem || draggingItem === processItem) return;
+
+  const rect = processItem.getBoundingClientRect();
+  const insertAfter = event.clientY > rect.top + rect.height / 2;
+  processGrid.querySelectorAll(".process-item").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+  processItem.classList.add(insertAfter ? "drop-after" : "drop-before");
+
+  if (insertAfter) {
+    processItem.after(draggingItem);
+  } else {
+    processItem.before(draggingItem);
+  }
+}
+
+async function handleProcessDrop(event) {
+  if (user.role !== "admin") return;
+  const processGrid = event.target.closest(".process-grid");
+  if (!processGrid || !draggedProcessStepId) return;
+  event.preventDefault();
+
+  const workItem = processGrid.closest(".work-item");
+  processGrid.classList.add("is-saving-order");
+  try {
+    await persistProcessStepOrder(workItem);
+  } catch (error) {
+    window.alert(error.message);
+    await refreshWorksView({ workId: workItem?.dataset.workId, detailTab: "process" });
+  } finally {
+    processGrid.classList.remove("is-saving-order");
+    processGrid.querySelectorAll(".process-item").forEach((item) => item.classList.remove("drop-before", "drop-after"));
+    draggedProcessStepId = null;
+  }
+}
+
+function handleProcessDragEnd(event) {
+  const processItem = event.target.closest(".process-item");
+  if (processItem) {
+    processItem.classList.remove("dragging");
+  }
+  worksList.querySelectorAll(".process-item").forEach((item) => item.classList.remove("drop-before", "drop-after", "dragging"));
+  draggedProcessStepId = null;
+}
+
+[worksList].forEach((list) => {
+  list.addEventListener("click", handleWorksInteraction);
+  list.addEventListener("click", handleWorkToggle);
+  list.addEventListener("change", handleWorkStatusChange);
+  list.addEventListener("click", handleMaterialCheckboxChange);
+  list.addEventListener("change", handleAttachmentChoiceChange);
+  list.addEventListener("click", handleProcessCheckboxChange);
+  list.addEventListener("keydown", handleProcessStepInputKeydown);
+  list.addEventListener("dragstart", handleProcessDragStart);
+  list.addEventListener("dragover", handleProcessDragOver);
+  list.addEventListener("drop", handleProcessDrop);
+  list.addEventListener("dragend", handleProcessDragEnd);
+});
+
+updateStatusFilterButtons();
+loadData().catch((error) => {
+  window.alert(`Erro ao carregar dados: ${error.message}`);
+});
