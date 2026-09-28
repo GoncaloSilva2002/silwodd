@@ -744,7 +744,7 @@ function buildWorksOrderBy() {
   return `${doneRank} ASC, ${priorityRank} DESC, o.id DESC`;
 }
 
-async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilter = null) {
+async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilter = null, includeChildRows = false) {
   const dueDateSelect = schemaInfo.obrasDueDateColumn
     ? `o.${schemaInfo.obrasDueDateColumn} AS data_fim_prevista`
     : "NULL AS data_fim_prevista";
@@ -785,22 +785,26 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   const whereClauses = [];
 
   // A lista geral mostra apenas obras principais; os grupos são carregados dentro delas.
-  whereClauses.push("o.id_obra_principal IS NULL");
+  if (!includeChildRows) whereClauses.push("o.id_obra_principal IS NULL");
 
   if (statusFilterCode) {
     const estadoId = await getEstadoIdFromCode(statusFilterCode);
     if (!estadoId) return [];
-    whereClauses.push(`(
-      o.id_estado = ?
-      OR EXISTS (
-        SELECT 1
-        FROM obras child_work
-        WHERE child_work.id_obra_principal = o.id
-          AND child_work.id_estado = ?
-      )
-    )`);
-    params.push(estadoId);
-    params.push(estadoId);
+    if (includeChildRows) {
+      whereClauses.push("o.id_estado = ?");
+      params.push(estadoId);
+    } else {
+      whereClauses.push(`(
+        o.id_estado = ?
+        OR EXISTS (
+          SELECT 1
+          FROM obras child_work
+          WHERE child_work.id_obra_principal = o.id
+            AND child_work.id_estado = ?
+        )
+      )`);
+      params.push(estadoId, estadoId);
+    }
   }
 
   if (Number.isInteger(clientIdFilter) && clientIdFilter > 0) {
@@ -888,7 +892,7 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     return signedUrlCache.get(storedPath);
   };
 
-  return Promise.all(obras.map(async (obra) => {
+  const result = await Promise.all(obras.map(async (obra) => {
     let storedFinalAttachments = [];
     try {
       const parsed = JSON.parse(obra.final_attachment_paths || "[]");
@@ -981,6 +985,19 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
     }));
     return item;
   }));
+
+  if (!includeChildRows && childRows.length) {
+    const allWorks = await getWorks(null, "", null, true);
+    const allWorksById = new Map(allWorks.map((work) => [Number(work.id), work]));
+    for (const work of result) {
+      work.groups = childRows
+        .filter((child) => Number(child.id_obra_principal) === Number(work.id))
+        .map((child) => allWorksById.get(Number(child.id)))
+        .filter(Boolean);
+    }
+  }
+
+  return result;
 }
 
 app.post("/api/auth/login", authLimiter, async (req, res) => {

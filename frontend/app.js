@@ -849,6 +849,7 @@ function renderWorks(items, target) {
         const visibleGroups = worksFilterStatus
           ? (w.groups || []).filter((group) => group.status === worksFilterStatus)
           : (w.groups || []);
+        const isGroupContainer = Array.isArray(w.groups) && w.groups.length > 0;
         const completedSteps = processSteps.filter((step) => step.done).length;
         const progressPercent = processSteps.length
           ? Math.round((completedSteps / processSteps.length) * 100)
@@ -917,11 +918,10 @@ function renderWorks(items, target) {
           ${visibleGroups.length ? `
             <div class="work-groups-summary">
               <strong>${worksFilterStatus ? `Zonas: ${escapeHtml(statusLabel(worksFilterStatus))}` : "Zonas da obra"}</strong>
-              <div class="work-groups-list">
-                ${visibleGroups.map((group) => `<span class="work-group-pill ${group.status === "in_progress" ? "active" : ""}">${escapeHtml(group.title)} · ${escapeHtml(statusLabel(group.status))}</span>`).join("")}
-              </div>
+              <div class="work-zones-list"></div>
             </div>
           ` : ""}
+          ${isGroupContainer ? "" : `
           <div class="detail-tabs">
             <button type="button" class="detail-tab-btn active" data-detail-tab="materials">Materiais</button>
             <button type="button" class="detail-tab-btn" data-detail-tab="process">Etapas do Processo</button>
@@ -956,12 +956,23 @@ function renderWorks(items, target) {
               <button type="button" class="save-work-observations-btn">Guardar observações</button>
             </div>
           </div>
+          `}
         </div>
       </article>
     `;
       }
     )
     .join("");
+
+  target.querySelectorAll(".work-item").forEach((workItem) => {
+    const work = items.find((item) => String(item.id) === String(workItem.dataset.workId));
+    const zonesContainer = workItem.querySelector(".work-zones-list");
+    if (!zonesContainer || !work?.groups?.length) return;
+    const visibleZones = worksFilterStatus
+      ? work.groups.filter((group) => group.status === worksFilterStatus)
+      : work.groups;
+    renderWorks(visibleZones, zonesContainer);
+  });
 }
 
 function renderClients(items) {
