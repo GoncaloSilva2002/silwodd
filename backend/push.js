@@ -66,15 +66,21 @@ async function sendPushToUsers(query, userIds, payload) {
   const ids = [...new Set(userIds.map(Number).filter((id) => Number.isInteger(id) && id > 0))];
   if (!ids.length) return;
   const subscriptions = await query(
-    `SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id IN (${ids.map(() => "?").join(",")})`,
+    `SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id IN (${ids.map(() => "?").join(",")})`,
     ids
   );
+  const unreadRows = await query(
+    `SELECT user_id, COUNT(*) AS total FROM app_notifications WHERE seen = FALSE AND user_id IN (${ids.map(() => "?").join(",")}) GROUP BY user_id`,
+    ids
+  );
+  const unreadByUser = new Map(unreadRows.map((row) => [Number(row.user_id), Number(row.total)]));
   await Promise.all(subscriptions.map(async (subscription) => {
     try {
+      const unread = unreadByUser.get(Number(subscription.user_id)) || 0;
       await webpush.sendNotification({
         endpoint: subscription.endpoint,
         keys: { p256dh: subscription.p256dh, auth: subscription.auth }
-      }, JSON.stringify(payload));
+      }, JSON.stringify({ ...payload, unread }));
     } catch (error) {
       if ([404, 410].includes(error.statusCode)) {
         await query("DELETE FROM push_subscriptions WHERE id = ?", [subscription.id]);
