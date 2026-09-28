@@ -5,6 +5,8 @@ self.addEventListener("push", (event) => {
     body: data.body || data.title || "Tens uma nova notificacao.",
     icon: "/images.png",
     badge: "/images.png",
+    silent: false,
+    renotify: true,
     data: data.data || {}
   }));
 });

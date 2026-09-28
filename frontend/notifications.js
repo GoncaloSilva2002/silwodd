@@ -12,6 +12,28 @@
   let initialized = false;
   let busy = false;
   let oldest = null;
+  let notificationAudioContext = null;
+
+  function playNotificationSound() {
+    try {
+      notificationAudioContext ||= new AudioContext();
+      const context = notificationAudioContext;
+      if (context.state === "suspended") context.resume();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, context.currentTime);
+      oscillator.frequency.setValueAtTime(1174, context.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.35);
+      oscillator.connect(gain).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.36);
+    } catch (_error) {
+      // O navegador pode bloquear som até existir uma interação do utilizador.
+    }
+  }
 
   function base64ToBytes(value) {
     const padding = "=".repeat((4 - value.length % 4) % 4);
@@ -160,6 +182,7 @@
       if (!data) return;
       const fresh = data.items.filter((item) => !item.seen && !known.has(item.id));
       if (initialized && fresh.length) {
+        playNotificationSound();
         if (fresh.length === 1) showNotificationPopup(fresh[0]);
         else showToast(`Tens ${fresh.length} novas notificações.`, "info");
       }
