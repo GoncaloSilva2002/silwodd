@@ -14,6 +14,7 @@ const { uploadFile, getFileUrl } = require("./storage");
 const { requireAuth } = require("./middleware/auth");
 const { createChatRouter, initChat } = require("./chat");
 const { createNotificationsRouter, initNotifications, removeExpiredNotifications } = require("./notifications");
+const { createPushRouter, initPush, sendPushToUsers } = require("./push");
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -121,8 +122,9 @@ const authLimiter = rateLimit({
 
 app.use("/api", apiLimiter);
 app.use(express.json({ limit: "1mb" }));
-app.use("/api/chat", createChatRouter(query, requireAuth));
+app.use("/api/chat", createChatRouter(query, requireAuth, (userIds, payload) => sendPushToUsers(query, userIds, payload)));
 app.use("/api/notifications", createNotificationsRouter(query, requireAuth));
+app.use("/api/push", createPushRouter(query, requireAuth));
 app.use(express.static(path.join(__dirname, "..", "frontend")));
 app.use("/uploads", express.static(uploadsDir));
 
@@ -2091,6 +2093,12 @@ app.patch("/api/works/:id/priority", requireAuth, requireAdmin, async (req, res)
     const rows = await getWorks(null);
     const work = rows.find((item) => item.id === id);
     await createAuditLog(req, "update_work_priority", "work", id, id, { priority });
+    const users = await query("SELECT id FROM funcionarios");
+    await sendPushToUsers(query, users.map((item) => item.id), {
+      title: "Prioridade alterada",
+      body: `A prioridade de ${work?.title || "uma obra"} foi alterada.`,
+      data: { kind: "priority", work_id: id }
+    });
     return res.json(work || null);
   } catch (error) {
     return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar prioridade." });
@@ -2200,6 +2208,7 @@ async function start() {
     await ensureAuditLogsTable();
     await ensureWorksPriorityColumn();
     await initNotifications(query);
+    await initPush(query);
     await removeExpiredNotifications(query);
     await ensureWorksObservationsColumn();
     await ensureClientsNifColumn();

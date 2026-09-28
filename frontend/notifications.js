@@ -5,11 +5,50 @@
   const older = document.getElementById("notifications-older");
   const tab = document.querySelector('[data-tab="notifications"]');
   const mobileMenu = document.getElementById("mobile-menu-btn");
+  const pushButton = document.getElementById("enable-push-notifications");
+  const pushStatus = document.getElementById("push-notifications-status");
   let items = new Map();
   let known = new Set();
   let initialized = false;
   let busy = false;
   let oldest = null;
+
+  function base64ToBytes(value) {
+    const padding = "=".repeat((4 - value.length % 4) % 4);
+    const base64 = (value + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const raw = window.atob(base64);
+    return Uint8Array.from([...raw].map((character) => character.charCodeAt(0)));
+  }
+
+  async function enablePushNotifications() {
+    if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      throw new Error("Este navegador ou ligação não suporta notificações push. Usa HTTPS.");
+    }
+    if (!("Notification" in window)) throw new Error("As notificações não estão disponíveis neste navegador.");
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") throw new Error("A autorização para notificações foi recusada.");
+    const registration = await navigator.serviceWorker.register("/sw.js");
+    const keyResponse = await api("/api/push/public-key", { successMessage: false });
+    const subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64ToBytes(keyResponse.publicKey)
+    });
+    await api("/api/push/subscribe", {
+      method: "POST",
+      body: JSON.stringify(subscription),
+      successMessage: false
+    });
+    pushButton.textContent = "Notificações ativas neste dispositivo";
+    pushButton.disabled = true;
+    pushStatus.textContent = "Este dispositivo já pode receber notificações.";
+  }
+
+  pushButton?.addEventListener("click", async () => {
+    pushButton.disabled = true;
+    pushStatus.textContent = "A pedir autorização...";
+    try { await enablePushNotifications(); }
+    catch (error) { pushStatus.textContent = error.message; pushButton.disabled = false; }
+  });
 
   function showNotificationPopup(item) {
     const container = document.getElementById("toast-container");

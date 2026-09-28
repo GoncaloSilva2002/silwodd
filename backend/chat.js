@@ -10,7 +10,7 @@ async function initChat(query) {
   }
 }
 
-function createChatRouter(query, requireAuth) {
+function createChatRouter(query, requireAuth, pushNotification = null) {
   const router = express.Router();
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024, files: 1, fields: 1, fieldSize: 16000 } }).single("file");
   const id = (value) => /^\d+$/.test(String(value)) && Number.isSafeInteger(Number(value)) && Number(value) > 0;
@@ -97,6 +97,12 @@ function createChatRouter(query, requireAuth) {
       INSERT INTO chat_attachments (message_id, filename, content) SELECT id, ?, ? FROM message RETURNING filename
     ) SELECT message.*, attachment.filename AS attachment_name FROM message CROSS JOIN attachment`,
     [req.conversation.id, req.chatUser.id, req.chatUser.username, text || "Anexo", filename, req.file.buffer]);
+    const recipient = Number(req.conversation.user_a) === Number(req.chatUser.id) ? req.conversation.user_b : req.conversation.user_a;
+    if (pushNotification && recipient) await pushNotification([recipient], {
+      title: `Nova mensagem de ${req.chatUser.username}`,
+      body: text || "Recebeste um novo anexo.",
+      data: { kind: "message", conversation_id: req.conversation.id }
+    });
     res.status(201).json(rows[0]);
   }));
   router.post("/conversations/:id/messages", route(async (req, res) => {
@@ -106,6 +112,12 @@ function createChatRouter(query, requireAuth) {
     if (req.conversation.user_a == null || req.conversation.user_b == null) return res.status(409).json({ error: "Este utilizador já não está disponível. O histórico foi preservado." });
     const rows = await query("INSERT INTO chat_messages (conversation_id, sender_id, sender_name, body) VALUES (?, ?, ?, ?) RETURNING *",
       [req.conversation.id, req.chatUser.id, req.chatUser.username, body]);
+    const recipient = Number(req.conversation.user_a) === Number(req.chatUser.id) ? req.conversation.user_b : req.conversation.user_a;
+    if (pushNotification && recipient) await pushNotification([recipient], {
+      title: `Nova mensagem de ${req.chatUser.username}`,
+      body,
+      data: { kind: "message", conversation_id: req.conversation.id }
+    });
     res.status(201).json(rows[0]);
   }));
   return router;
