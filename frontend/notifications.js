@@ -72,6 +72,28 @@
     catch (error) { pushStatus.textContent = error.message; pushButton.disabled = false; }
   });
 
+  async function restorePushSubscription() {
+    if (!pushButton || !window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    try {
+      const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+      const subscription = await registration?.pushManager.getSubscription();
+      if (!subscription) return;
+      await api("/api/push/subscribe", {
+        method: "POST",
+        body: JSON.stringify(subscription),
+        successMessage: false
+      });
+      pushButton.textContent = "Notificações ativas neste dispositivo";
+      pushButton.disabled = true;
+      pushStatus.textContent = "Este dispositivo já pode receber notificações.";
+    } catch (_error) {
+      // A subscrição continua no navegador e pode ser sincronizada no próximo acesso.
+    }
+  }
+
+  restorePushSubscription();
+
   function showNotificationPopup(item) {
     const container = document.getElementById("toast-container");
     if (!container) return;
