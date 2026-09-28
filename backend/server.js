@@ -538,20 +538,7 @@ async function migrateProcessStepNamesAndAddEdging() {
 
   const works = await query("SELECT id FROM obras");
   for (const work of works) {
-    let steps = await getOrderedProcessSteps(work.id);
-    const existingNames = new Set(steps.map((step) => step.nome_etapa));
-    for (const defaultStep of defaultProcessSteps) {
-      if (existingNames.has(defaultStep.label)) continue;
-      const nextId = await getNextTableId("obra_etapas");
-      await query(
-        "INSERT INTO obra_etapas (id, id_obra, nome_etapa, concluida, order_index) VALUES (?, ?, ?, FALSE, ?)",
-        [nextId, work.id, defaultStep.label, steps.length]
-      );
-      existingNames.add(defaultStep.label);
-      steps.push({ id: nextId, nome_etapa: defaultStep.label });
-    }
-
-    steps = await getOrderedProcessSteps(work.id);
+    const steps = await getOrderedProcessSteps(work.id);
     const defaultNames = new Set(defaultProcessSteps.map((step) => step.label));
     const byName = new Map(steps.map((step) => [step.nome_etapa, step]));
     const orderedSteps = [
@@ -2219,8 +2206,6 @@ async function start() {
     await ensureWorksFinalAttachmentColumn();
     await ensureMaterialsExtraColumns();
     await migrateProcessStepNamesAndAddEdging();
-    await initializeMaterialsForExistingWorks();
-    await initializeProcessStepsForExistingWorks();
     await loadSchemaInfo();
     const server = app.listen(normalizedPort, () => {
       // eslint-disable-next-line no-console
