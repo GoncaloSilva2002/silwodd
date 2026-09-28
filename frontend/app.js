@@ -148,14 +148,18 @@ if (user.role !== "admin") {
   const addClientTabButton = document.querySelector('.tab-btn[data-tab="add-client"]');
   const addUserTabButton = document.querySelector('.tab-btn[data-tab="users"]');
   const logsTabButton = document.querySelector('.tab-btn[data-tab="logs"]');
+  const aspiracaoTabButton = document.querySelector('.tab-btn[data-tab="aspiracao"]');
   if (addWorkTabButton) addWorkTabButton.classList.add("hidden");
   if (addClientTabButton) addClientTabButton.classList.add("hidden");
   if (addUserTabButton) addUserTabButton.classList.add("hidden");
   if (logsTabButton) logsTabButton.classList.add("hidden");
+  if (aspiracaoTabButton) aspiracaoTabButton.classList.add("hidden");
   tabAddWork.classList.add("hidden");
   tabAddClient.classList.add("hidden");
   tabUsers.classList.add("hidden");
   if (tabLogs) tabLogs.classList.add("hidden");
+  const tabAspiracao = document.getElementById("tab-aspiracao");
+  if (tabAspiracao) tabAspiracao.classList.add("hidden");
 }
 
 logoutBtn.addEventListener("click", () => {
