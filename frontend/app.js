@@ -2143,16 +2143,6 @@ function handleWorkToggle(event) {
   if (!details) return;
   const shouldOpen = details.classList.contains("hidden");
 
-  const siblingItems = workItem.parentElement?.querySelectorAll(":scope > .work-item") || [];
-  siblingItems.forEach((item) => {
-    const itemDetails = item.querySelector(".work-details");
-    const itemSummaryButton = item.querySelector(".work-summary-btn");
-    if (!itemDetails || !itemSummaryButton) return;
-    if (item === workItem && shouldOpen) return;
-    itemDetails.classList.add("hidden");
-    itemSummaryButton.classList.remove("expanded");
-  });
-
   details.classList.toggle("hidden");
   summaryButton.classList.toggle("expanded", !details.classList.contains("hidden"));
 
