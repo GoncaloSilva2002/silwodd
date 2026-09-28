@@ -193,6 +193,16 @@
     }
   }
 
+  async function updateAppBadge(unread) {
+    try {
+      if (!navigator.setAppBadge || !navigator.clearAppBadge) return;
+      if (Number(unread) > 0) await navigator.setAppBadge(Number(unread));
+      else await navigator.clearAppBadge();
+    } catch (_error) {
+      // O suporte ao badge depende do navegador e do sistema operativo.
+    }
+  }
+
   async function acknowledge(item) {
     if (item.seen) return;
     const result = await api(`/api/notifications/${item.id}/seen`, { method: "PATCH", successMessage: false });
@@ -222,6 +232,7 @@
       initialized = true;
       badge.textContent = data.unread > 99 ? "99+" : String(data.unread);
       badge.classList.toggle("hidden", !data.unread);
+      updateAppBadge(data.unread);
       tab.setAttribute("aria-label", `Notificações: ${data.unread} por consultar`);
       mobileMenu?.classList.toggle("has-notifications", data.unread > 0);
       status.textContent = "";
