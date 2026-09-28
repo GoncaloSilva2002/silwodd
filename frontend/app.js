@@ -860,7 +860,6 @@ function renderWorks(items, target) {
           <span class="work-summary-main">
             <strong class="work-summary-title">${escapeHtml(w.title)}</strong>
             <span class="work-summary-client">${escapeHtml(w.client_name || "Sem cliente")}</span>
-            ${visibleGroups.length ? `<span class="muted">${visibleGroups.length} zona(s): ${visibleGroups.map((group) => escapeHtml(group.title)).join(", ")}</span>` : ""}
           </span>
           <span class="work-summary-side">
             <span class="work-summary-meta">${escapeHtml(statusLabel(w.status))} · Prioridade ${escapeHtml(priorityLabel(w.priority))}</span>
@@ -915,12 +914,7 @@ function renderWorks(items, target) {
           </div>
           ` : ""}
           ${w.description ? `<p class="work-description">${escapeHtml(w.description)}</p>` : ""}
-          ${visibleGroups.length ? `
-            <div class="work-groups-summary">
-              <strong>${worksFilterStatus ? `Zonas: ${escapeHtml(statusLabel(worksFilterStatus))}` : "Zonas da obra"}</strong>
-              <div class="work-zones-list"></div>
-            </div>
-          ` : ""}
+          ${visibleGroups.length ? `<div class="work-zones-list"></div>` : ""}
           ${isGroupContainer ? "" : `
           <div class="detail-tabs">
             <button type="button" class="detail-tab-btn active" data-detail-tab="materials">Materiais</button>
@@ -2149,7 +2143,8 @@ function handleWorkToggle(event) {
   if (!details) return;
   const shouldOpen = details.classList.contains("hidden");
 
-  worksList.querySelectorAll(".work-item").forEach((item) => {
+  const siblingItems = workItem.parentElement?.querySelectorAll(":scope > .work-item") || [];
+  siblingItems.forEach((item) => {
     const itemDetails = item.querySelector(".work-details");
     const itemSummaryButton = item.querySelector(".work-summary-btn");
     if (!itemDetails || !itemSummaryButton) return;
@@ -2160,6 +2155,11 @@ function handleWorkToggle(event) {
 
   details.classList.toggle("hidden");
   summaryButton.classList.toggle("expanded", !details.classList.contains("hidden"));
+
+  if (shouldOpen && workItem.parentElement?.closest(".work-item")) {
+    const processButton = workItem.querySelector('.detail-tab-btn[data-detail-tab="process"]');
+    if (processButton) processButton.click();
+  }
 }
 
 function handleProcessStepInputKeydown(event) {
