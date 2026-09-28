@@ -184,9 +184,9 @@
               </div>
               <div>
                 <label for="work-parent">Obra principal</label>
-                <select id="work-parent">
-                  <option value="">Obra principal (sem grupo)</option>
-                </select>
+                <input id="work-parent-input" placeholder="Escreve para filtrar obras existentes" autocomplete="off" />
+                <div id="work-parent-menu" class="autocomplete-menu hidden"></div>
+                <input id="work-parent" type="hidden" />
               </div>
             </div>
             <div class="form-field form-field-spaced">

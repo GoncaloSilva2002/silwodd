@@ -59,6 +59,8 @@ let logsCache = [];
 let draggedProcessStepId = null;
 let worksCache = [];
 const workParentSelect = document.getElementById("work-parent");
+const workParentInput = document.getElementById("work-parent-input");
+const workParentMenu = document.getElementById("work-parent-menu");
 
 const defaultMaterialTypes = [
   { key: "stone", label: "Pedra" },
@@ -1270,10 +1272,8 @@ function applyClientsFilter() {
 
 async function loadWorksTab() {
   const list = await api(buildWorksQuery());
-  worksCache = list || [];
-  if (workParentSelect) {
-    workParentSelect.innerHTML = `<option value="">Obra principal (sem grupo)</option>${worksCache.map((work) => `<option value="${work.id}">${escapeHtml(work.title)}</option>`).join("")}`;
-  }
+  worksCache = await api("/api/works", { successMessage: false }) || [];
+  renderWorkParentMenu(workParentInput?.value || "");
   renderWorks(list || [], worksList);
   (list || []).forEach((work) => {
     const workItem = worksList.querySelector(`.work-item[data-work-id="${work.id}"]`);
@@ -1282,6 +1282,16 @@ async function loadWorksTab() {
   worksList.querySelectorAll(".work-status-select, .save-work-status-btn, .work-priority-select, .save-work-priority-btn").forEach((element) => {
     element.disabled = user.role !== "admin";
   });
+}
+
+function renderWorkParentMenu(term = "") {
+  if (!workParentMenu) return;
+  const normalized = String(term).trim().toLowerCase();
+  const filtered = worksCache.filter((work) => !normalized || String(work.title || "").toLowerCase().includes(normalized));
+  workParentMenu.innerHTML = filtered.length
+    ? `<button type="button" class="autocomplete-item work-parent-clear" data-parent-id="">Sem obra principal</button>${filtered.map((work) => `<button type="button" class="autocomplete-item" data-parent-id="${work.id}" data-parent-label="${escapeHtml(work.title)}">${escapeHtml(work.title)}</button>`).join("")}`
+    : "<div class='autocomplete-empty'>Sem obras encontradas.</div>";
+  workParentMenu.classList.remove("hidden");
 }
 
 function reopenWorkDetails(workId, detailTab = null) {
@@ -1432,6 +1442,8 @@ workForm.addEventListener("submit", async (event) => {
     });
     workForm.reset();
     workClientIdInput.value = "";
+    if (workParentSelect) workParentSelect.value = "";
+    if (workParentInput) workParentInput.value = "";
     await loadData();
     setActiveTab("works");
   } catch (error) {
@@ -1459,11 +1471,26 @@ workClientMenu.addEventListener("click", (event) => {
   workClientIdInput.value = clientId;
   workClientMenu.classList.add("hidden");
 });
+workParentInput?.addEventListener("focus", () => renderWorkParentMenu(workParentInput.value));
+workParentInput?.addEventListener("input", () => {
+  if (workParentSelect) workParentSelect.value = "";
+  renderWorkParentMenu(workParentInput.value);
+});
+workParentMenu?.addEventListener("click", (event) => {
+  const option = event.target.closest(".autocomplete-item");
+  if (!option) return;
+  if (workParentSelect) workParentSelect.value = option.dataset.parentId || "";
+  if (workParentInput) workParentInput.value = option.dataset.parentLabel || "";
+  workParentMenu.classList.add("hidden");
+});
 document.addEventListener("click", (event) => {
   const insideClientInput = event.target.closest("#work-client-input") || event.target.closest("#work-client-menu");
   if (!insideClientInput) {
     workClientMenu.classList.add("hidden");
   }
+
+  const insideParentInput = event.target.closest("#work-parent-input") || event.target.closest("#work-parent-menu");
+  if (!insideParentInput) workParentMenu?.classList.add("hidden");
 
   const insideWorksSearch =
     event.target.closest("#works-client-search") ||
