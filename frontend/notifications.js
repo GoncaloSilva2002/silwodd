@@ -49,12 +49,13 @@
       throw new Error("No iPhone, abre o menu Partilhar, escolhe 'Adicionar ao ecrã principal' e abre a app pelo novo ícone.");
     }
     if (!window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-      throw new Error("Este navegador ou ligação não suporta notificações push. Usa HTTPS.");
+      throw new Error("Este iPhone precisa de iOS 16.4 ou superior e da app aberta pelo ícone do ecrã principal. Confirma também que o endereço começa por https://.");
     }
     if (!("Notification" in window)) throw new Error("As notificações não estão disponíveis neste navegador.");
     const permission = await Notification.requestPermission();
     if (permission !== "granted") throw new Error("A autorização para notificações foi recusada.");
-    const registration = await navigator.serviceWorker.register("/sw.js");
+    await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const registration = await navigator.serviceWorker.ready;
     const keyResponse = await api("/api/push/public-key", { successMessage: false });
     const subscription = await registration.pushManager.subscribe({
       userVisibleOnly: true,
@@ -81,7 +82,7 @@
     if (!pushButton || !window.isSecureContext || !("serviceWorker" in navigator) || !("PushManager" in window)) return;
     if (!("Notification" in window) || Notification.permission !== "granted") return;
     try {
-      const registration = await navigator.serviceWorker.getRegistration("/sw.js");
+      const registration = await navigator.serviceWorker.getRegistration("/");
       const subscription = await registration?.pushManager.getSubscription();
       if (!subscription) return;
       await api("/api/push/subscribe", {

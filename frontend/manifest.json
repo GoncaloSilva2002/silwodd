@@ -2,6 +2,8 @@
   "name": "Silwood",
   "short_name": "Silwood",
   "start_url": "/app.html",
+  "id": "/app.html",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#f7f6f0",
   "theme_color": "#1b1b18",
