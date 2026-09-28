@@ -855,7 +855,7 @@ function renderWorks(items, target) {
           ? Math.round((completedSteps / processSteps.length) * 100)
           : 0;
         return `
-      <article class="work-item" data-work-id="${w.id}">
+      <article class="work-item ${isGroupContainer ? "work-group-container" : ""}" data-work-id="${w.id}">
         <button type="button" class="work-summary-btn">
           <span class="work-summary-main">
             <strong class="work-summary-title">${escapeHtml(w.title)}</strong>

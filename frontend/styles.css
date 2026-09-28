@@ -463,6 +463,15 @@ button:active {
   box-shadow: 0 2px 10px rgba(27, 27, 24, 0.04);
 }
 
+.work-group-container > .work-summary-btn .work-summary-side,
+.work-group-container > .work-details > .final-attachment-preview,
+.work-group-container > .work-details > .work-config-row,
+.work-group-container > .work-details > .work-overview,
+.work-group-container > .work-details > .public-link-box,
+.work-group-container > .work-details > .work-description {
+  display: none;
+}
+
 .work-config-row {
   display: grid;
   gap: 12px;
