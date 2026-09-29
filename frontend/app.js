@@ -1319,10 +1319,17 @@ function reopenWorkDetails(workId, detailTab = null) {
 }
 
 async function refreshWorksView(options = {}) {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
   await loadWorksTab();
   if (options.workId) {
     reopenWorkDetails(options.workId, options.detailTab || null);
   }
+
+  // Reabrir a obra/tab pode voltar a provocar scroll através do foco do botão.
+  // Restaura depois de o browser terminar o layout da nova lista.
+  window.scrollTo(scrollX, scrollY);
+  requestAnimationFrame(() => window.scrollTo(scrollX, scrollY));
 }
 
 async function loadUsers() {
