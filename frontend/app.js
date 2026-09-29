@@ -1271,6 +1271,11 @@ function applyClientsFilter() {
 }
 
 async function loadWorksTab() {
+  // A lista e os seus detalhes são redesenhados depois de cada alteração.
+  // Guarda a posição para que uma ação (por exemplo, marcar uma etapa)
+  // não devolva o utilizador ao topo da página.
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
   const list = await api(buildWorksQuery());
   worksCache = await api("/api/works", { successMessage: false }) || [];
   renderWorkParentMenu(workParentInput?.value || "");
@@ -1282,6 +1287,8 @@ async function loadWorksTab() {
   worksList.querySelectorAll(".work-status-select, .save-work-status-btn, .work-priority-select, .save-work-priority-btn").forEach((element) => {
     element.disabled = user.role !== "admin";
   });
+
+  window.scrollTo(scrollX, scrollY);
 }
 
 function renderWorkParentMenu(term = "") {
