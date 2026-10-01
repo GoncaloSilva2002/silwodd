@@ -187,7 +187,17 @@
 
         <section id="tab-logs" class="hidden">
           <h2>Logs</h2>
-          <div class="client-filter-group section-search">
+          <div class="logs-view-switch" role="group" aria-label="Vista dos registos">
+            <button type="button" id="logs-view-all" class="logs-view-btn active" aria-pressed="true">Todos os logs</button>
+            <button type="button" id="logs-view-history" class="logs-view-btn" aria-pressed="false">Histórico das obras</button>
+          </div>
+          <div id="logs-history-controls" class="logs-history-controls hidden">
+            <label for="logs-history-work">Obra</label>
+            <select id="logs-history-work">
+              <option value="">Seleciona uma obra</option>
+            </select>
+          </div>
+          <div id="logs-search-controls" class="client-filter-group section-search">
             <div class="search-input-row">
               <input id="logs-work-search" placeholder="Pesquisar logs por obra..." />
             </div>
@@ -204,7 +214,7 @@
           <form id="work-form" class="panel-form">
             <div class="form-grid">
               <div>
-                <label for="work-title">Nome da obra</label>
+                <label for="work-title">Nome da Obra/Zona</label>
                 <input id="work-title" required />
               </div>
               <div>
@@ -234,7 +244,7 @@
                 </select>
               </div>
               <div>
-                <label for="work-parent">Obra principal</label>
+                <label for="work-parent">Nome da Obra (principal)</label>
                 <input id="work-parent-input" placeholder="Escreve para filtrar obras existentes" autocomplete="off" />
                 <div id="work-parent-menu" class="autocomplete-menu hidden"></div>
                 <input id="work-parent" type="hidden" />

@@ -43,6 +43,11 @@ const clientsClearBtn = document.getElementById("clients-clear-btn");
 const logsWorkSearchInput = document.getElementById("logs-work-search");
 const logsSearchBtn = document.getElementById("logs-search-btn");
 const logsClearBtn = document.getElementById("logs-clear-btn");
+const logsViewAllBtn = document.getElementById("logs-view-all");
+const logsViewHistoryBtn = document.getElementById("logs-view-history");
+const logsHistoryControls = document.getElementById("logs-history-controls");
+const logsHistoryWorkSelect = document.getElementById("logs-history-work");
+const logsSearchControls = document.getElementById("logs-search-controls");
 const statusFilterButtons = document.querySelectorAll(".status-filter-btn");
 const clientNameToId = new Map();
 let clientAutocompleteItems = [];
@@ -53,6 +58,8 @@ let worksFilterClientId = "";
 let clientsFilterTerm = "";
 let clientsFilterClientId = "";
 let logsFilterWork = "";
+let logsView = "all";
+let logsHistoryWorkId = "";
 let clientsCache = [];
 let usersCache = [];
 let logsCache = [];
@@ -819,9 +826,13 @@ function formatLogDate(value) {
 function formatLogAction(actionType) {
   const labels = {
     create_work: "Criou obra",
+    update_work_parent: "Alterou a obra principal",
     update_work_status: "Alterou estado da obra",
     update_work_priority: "Alterou prioridade da obra",
     update_work_observations: "Alterou observações da obra",
+    create_calendar_event: "Criou marcação no calendário",
+    update_calendar_event: "Alterou marcação no calendário",
+    delete_calendar_event: "Eliminou marcação no calendário",
     create_material: "Adicionou material",
     update_material: "Alterou material",
     upload_material_order_note_pdf: "Anexou nota de encomenda",
@@ -835,7 +846,10 @@ function formatLogAction(actionType) {
     delete_process_step: "Eliminou etapa",
     update_process_step: "Alterou etapa",
     upload_process_pdf: "Anexou PDF da etapa",
+    upload_final_attachment: "Anexou ficheiro final",
     create_client: "Criou cliente",
+    update_client: "Alterou cliente",
+    delete_client: "Eliminou cliente",
     create_user: "Criou utilizador",
     delete_user: "Eliminou utilizador"
   };
@@ -847,6 +861,7 @@ function formatLogEntity(entityType) {
     work: "Obra",
     material: "Material",
     process_step: "Etapa",
+    calendar_event: "Marcação de calendário",
     client: "Cliente",
     user: "Utilizador"
   };
@@ -858,6 +873,10 @@ function formatLogDetails(details) {
   if (typeof details === "string") return details;
   const labels = {
     title: "Titulo",
+    due_date: "Prazo",
+    parent_work_id: "Obra principal",
+    automatic: "Automático",
+    file_paths: "Ficheiros",
     status: "Estado",
     priority: "Prioridade",
     client_id: "ID cliente",
@@ -1154,6 +1173,59 @@ function renderLogs(items) {
     .join("");
 }
 
+function renderWorkHistory(items, hasSelectedWork = true) {
+  if (!logsList) return;
+  if (!hasSelectedWork) {
+    logsList.innerHTML = "<div class='empty-state'><strong>Seleciona uma obra</strong><span>Escolhe uma obra para veres a sua linha temporal de alterações.</span></div>";
+    return;
+  }
+  if (!items.length) {
+    logsList.innerHTML = "<div class='empty-state'><strong>Sem histórico</strong><span>Ainda não existem alterações registadas para esta obra.</span></div>";
+    return;
+  }
+
+  logsList.innerHTML = items
+    .map(
+      (item) => `
+      <article class="log-item work-history-item">
+        <div class="log-marker" aria-hidden="true"></div>
+        <div class="log-content">
+          <div class="log-head"><h3>${escapeHtml(formatLogAction(item.action_type))}</h3><time>${escapeHtml(formatLogDate(item.created_at))}</time></div>
+          <p><strong>${escapeHtml(item.username || "Sistema")}</strong> · ${escapeHtml(item.user_role || "-")}</p>
+          <p>${escapeHtml(formatLogEntity(item.entity_type))}</p>
+          ${formatLogDetails(item.details) ? `<p class="log-details">${escapeHtml(formatLogDetails(item.details))}</p>` : ""}
+        </div>
+      </article>
+    `
+    )
+    .join("");
+}
+
+function renderLogsHistoryOptions() {
+  if (!logsHistoryWorkSelect) return;
+  const selectedWorkId = String(logsHistoryWorkId || "");
+  const options = [...worksCache]
+    .sort((first, second) => String(first.title || "").localeCompare(String(second.title || ""), "pt-PT"))
+    .map((work) => `<option value="${escapeHtml(work.id)}">${escapeHtml(work.title || `Obra #${work.id}`)}</option>`)
+    .join("");
+  logsHistoryWorkSelect.innerHTML = `<option value="">Seleciona uma obra</option>${options}`;
+  if ([...logsHistoryWorkSelect.options].some((option) => option.value === selectedWorkId)) {
+    logsHistoryWorkSelect.value = selectedWorkId;
+  } else {
+    logsHistoryWorkId = "";
+  }
+}
+
+function updateLogsViewControls() {
+  const historyView = logsView === "history";
+  logsHistoryControls?.classList.toggle("hidden", !historyView);
+  logsSearchControls?.classList.toggle("hidden", historyView);
+  logsViewAllBtn?.classList.toggle("active", !historyView);
+  logsViewHistoryBtn?.classList.toggle("active", historyView);
+  logsViewAllBtn?.setAttribute("aria-pressed", String(!historyView));
+  logsViewHistoryBtn?.setAttribute("aria-pressed", String(historyView));
+}
+
 function renderClientOptions(items) {
   const counts = new Map();
   for (const client of items) {
@@ -1330,6 +1402,7 @@ async function loadWorksTab() {
   const scrollY = window.scrollY;
   const list = await api(buildWorksQuery());
   worksCache = await api("/api/works", { successMessage: false }) || [];
+  renderLogsHistoryOptions();
   renderWorkParentMenu(workParentInput?.value || "");
   renderWorks(list || [], worksList);
   (list || []).forEach((work) => {
@@ -1394,16 +1467,53 @@ async function loadUsers() {
 async function loadLogs() {
   if (!logsList || user.role !== "admin") return;
   try {
+    if (logsView === "history" && !logsHistoryWorkId) {
+      logsCache = [];
+      renderWorkHistory([], false);
+      return;
+    }
     const params = new URLSearchParams({ limit: "200" });
-    if (logsFilterWork) params.set("work", logsFilterWork);
+    if (logsView === "history") {
+      params.set("work_id", logsHistoryWorkId);
+    } else if (logsFilterWork) {
+      params.set("work", logsFilterWork);
+    }
     const list = await api(`/api/logs?${params.toString()}`);
     logsCache = list || [];
-    renderLogs(logsCache);
+    if (logsView === "history") {
+      renderWorkHistory(logsCache);
+    } else {
+      renderLogs(logsCache);
+    }
   } catch (_error) {
     if (logsList) {
       logsList.innerHTML = "<p class='muted'>Erro ao carregar logs.</p>";
     }
   }
+}
+
+if (logsViewAllBtn) {
+  logsViewAllBtn.addEventListener("click", async () => {
+    logsView = "all";
+    updateLogsViewControls();
+    await loadLogs();
+  });
+}
+
+if (logsViewHistoryBtn) {
+  logsViewHistoryBtn.addEventListener("click", async () => {
+    logsView = "history";
+    updateLogsViewControls();
+    renderWorkHistory([], Boolean(logsHistoryWorkId));
+    await loadLogs();
+  });
+}
+
+if (logsHistoryWorkSelect) {
+  logsHistoryWorkSelect.addEventListener("change", async () => {
+    logsHistoryWorkId = String(logsHistoryWorkSelect.value || "");
+    await loadLogs();
+  });
 }
 
 if (logsSearchBtn) {
@@ -1429,6 +1539,8 @@ if (logsWorkSearchInput) {
     await loadLogs();
   });
 }
+
+updateLogsViewControls();
 
 async function loadData() {
   const promises = [loadWorksTab(), api("/api/clients"), loadLogs()];
