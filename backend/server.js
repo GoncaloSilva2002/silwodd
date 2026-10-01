@@ -502,13 +502,23 @@ function normalizeCalendarEventPayload(body = {}) {
   };
 }
 
+function serializeCalendarDate(value) {
+  if (!value) return "";
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return "";
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+  }
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
 function serializeCalendarEvent(row) {
   return {
     id: row.id,
     work_id: row.work_id || null,
     titulo: row.titulo,
-    data: String(row.data || "").slice(0, 10),
-    data_fim: row.data_fim ? String(row.data_fim).slice(0, 10) : "",
+    data: serializeCalendarDate(row.data),
+    data_fim: serializeCalendarDate(row.data_fim),
     categoria: row.categoria || "normal",
     especial: row.categoria === "especial" ? "especial" : "",
     etapa: row.etapa || "",
