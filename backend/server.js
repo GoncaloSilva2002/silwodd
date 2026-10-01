@@ -733,7 +733,7 @@ function buildWorksOrderBy() {
   return `${doneRank} ASC, ${priorityRank} DESC, o.id DESC`;
 }
 
-async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilter = null, includeChildRows = false) {
+async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilter = null, includeChildRows = false, workIdFilter = null) {
   const dueDateSelect = schemaInfo.obrasDueDateColumn
     ? `o.${schemaInfo.obrasDueDateColumn} AS data_fim_prevista`
     : "NULL AS data_fim_prevista";
@@ -775,6 +775,11 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
 
   // A lista geral mostra apenas obras principais; os grupos são carregados dentro delas.
   if (!includeChildRows) whereClauses.push("o.id_obra_principal IS NULL");
+
+  if (Number.isInteger(workIdFilter) && workIdFilter > 0) {
+    whereClauses.push("o.id = ?");
+    params.push(workIdFilter);
+  }
 
   if (statusFilterCode) {
     const estadoId = await getEstadoIdFromCode(statusFilterCode);
@@ -824,7 +829,11 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
         ORDER BY child.id ASC
       `, obras.map((obra) => obra.id))
     : [];
-  const allWorkIds = [...obras.map((obra) => obra.id), ...childRows.map((row) => row.id)];
+  // Quando uma operação pede uma obra específica, não é necessário carregar
+  // materiais/processos das obras filhas para construir a resposta.
+  const allWorkIds = workIdFilter
+    ? obras.map((obra) => obra.id)
+    : [...obras.map((obra) => obra.id), ...childRows.map((row) => row.id)];
   const placeholdersAllWorks = allWorkIds.map(() => "?").join(", ");
   const obraIds = allWorkIds;
   const placeholdersObras = obraIds.map(() => "?").join(", ");
@@ -987,6 +996,13 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   }
 
   return result;
+}
+
+async function getWorkById(workId) {
+  const id = Number(workId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const works = await getWorks(null, "", null, true, id);
+  return works.find((work) => Number(work.id) === id) || null;
 }
 
 app.post("/api/auth/login", authLimiter, async (req, res) => {
@@ -1205,8 +1221,7 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     }
     await ensureDefaultMaterialsForWork(nextWorkId);
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === nextWorkId);
+    const work = await getWorkById(nextWorkId);
     await createAuditLog(req, "create_work", "work", nextWorkId, nextWorkId, {
       title: String(title).trim(),
       status: status || "pending",
@@ -1267,8 +1282,7 @@ app.patch("/api/works/:id/status", requireAuth, requireAdmin, async (req, res) =
     const result = await query("UPDATE obras SET id_estado = ? WHERE id = ?", [estadoId, id]);
     if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_work_status", "work", id, id, { status });
     return res.json(work || null);
   } catch (error) {
@@ -1329,8 +1343,7 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
       existing[0] = { id: nextMaterialId };
     }
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_material", "material", existing[0]?.id || null, id, {
       material_key: materialKey,
       ordered,
@@ -1364,8 +1377,7 @@ app.post("/api/works/:id/materials", requireAuth, requireAdmin, async (req, res)
       [nextMaterialId, id, label]
     );
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "create_material", "material", nextMaterialId, id, { label });
     return res.status(201).json(work || null);
   } catch (error) {
@@ -1415,8 +1427,7 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
       ]
     );
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_material", "material", materialId, id, {
       label: existing[0].nome_material,
       ordered,
@@ -1451,8 +1462,7 @@ app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth
         [publicPath, materialId, id]
       );
 
-      const rows = await getWorks(null);
-      const work = rows.find((item) => item.id === id);
+      const work = await getWorkById(id);
       await createAuditLog(req, "upload_material_order_note_pdf", "material", materialId, id, {
         label: existing[0].nome_material,
         note_encomenda_pdf_path: publicPath
@@ -1478,8 +1488,7 @@ app.delete("/api/works/:id/materials/item/:materialId", requireAuth, requireAdmi
     if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
 
     await query("DELETE FROM materiais WHERE id = ? AND id_obra = ?", [materialId, id]);
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "delete_material", "material", materialId, id, { label: existing[0].nome_material });
     return res.json(work || null);
   } catch (error) {
@@ -1548,8 +1557,7 @@ app.post("/api/works/:id/process", requireAuth, requireAdmin, async (req, res) =
     );
     await recalculateWorkStatusFromProcessSteps(id);
 
-    const works = await getWorks(null);
-    const work = works.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "create_process_step", "process_step", nextStepId, id, { label, order_index: nextOrderIndex });
     return res.status(201).json(work || null);
   } catch (error) {
@@ -1580,8 +1588,7 @@ app.patch("/api/works/:id/process/reorder", requireAuth, requireAdmin, async (re
     }
     await recalculateWorkStatusFromProcessSteps(id);
 
-    const works = await getWorks(null);
-    const work = works.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "reorder_process_steps", "work", id, id, { step_ids: stepIds });
     return res.json(work || null);
   } catch (error) {
@@ -1606,8 +1613,7 @@ app.delete("/api/works/:id/process/item/:stepId", requireAuth, requireAdmin, asy
     await normalizeProcessStepOrder(id);
     await recalculateWorkStatusFromProcessSteps(id);
 
-    const works = await getWorks(null);
-    const work = works.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "delete_process_step", "process_step", stepId, id, { label: existing[0].nome_etapa });
     return res.json(work || null);
   } catch (error) {
@@ -1630,8 +1636,7 @@ app.patch("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) =
     if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
 
     await updateProcessStepDone(req, id, stepId, done);
-    const works = await getWorks(null);
-    const work = works.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_process_step", "process_step", stepId, id, {
       step_key: getProcessStepKeyByName(existing[0].nome_etapa),
       label: existing[0].nome_etapa,
@@ -1663,8 +1668,7 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
 
     const done = req.body?.done === true || req.body?.done === "true";
     await updateProcessStepDone(req, id, existing[0].id, done);
-    const works = await getWorks(null);
-    const work = works.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_process_step", "process_step", existing[0].id, id, { step_key: stepKey, done });
     return res.json(work || null);
   } catch (error) {
@@ -1719,8 +1723,7 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
         existing[0] = { id: nextProcessStepId, newPaths };
       }
 
-      const rows = await getWorks(null);
-      const work = rows.find((item) => item.id === id);
+      const work = await getWorkById(id);
       await createAuditLog(req, "upload_process_pdf", "process_step", existing[0]?.id || null, id, {
         step_key: stepKey,
         file_paths: existing[0].newPaths
@@ -1761,8 +1764,7 @@ app.post("/api/works/:id/materials/:materialKey/upload", requireAuth, async (req
         existing[0] = { id: nextMaterialId };
       }
 
-      const rows = await getWorks(null);
-      const work = rows.find((item) => item.id === id);
+      const work = await getWorkById(id);
       await createAuditLog(req, "upload_material_pdf", "material", existing[0]?.id || null, id, {
         material_key: materialKey,
         pdf_path: publicPath
@@ -1794,8 +1796,7 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
       const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}`);
       await query("UPDATE materiais SET pdf_path = ? WHERE id = ? AND id_obra = ?", [publicPath, materialId, id]);
 
-      const rows = await getWorks(null);
-      const work = rows.find((item) => item.id === id);
+      const work = await getWorkById(id);
       await createAuditLog(req, "upload_material_pdf", "material", materialId, id, {
         label: existing[0].nome_material,
         pdf_path: publicPath
@@ -1830,8 +1831,7 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
         [publicPath, materialId, id]
       );
 
-      const rows = await getWorks(null);
-      const work = rows.find((item) => item.id === id);
+      const work = await getWorkById(id);
       await createAuditLog(req, "upload_material_invoice_photo", "material", materialId, id, {
         label: existing[0].nome_material,
         invoice_photo_path: publicPath
@@ -1868,9 +1868,9 @@ app.post("/api/works/:id/final-attachment", requireAuth, async (req, res) => {
         "UPDATE obras SET final_attachment_path = ?, final_attachment_paths = ? WHERE id = ?",
         [newPaths[newPaths.length - 1], JSON.stringify(storedPaths), id]
       );
-      const rows = await getWorks(null);
+      const work = await getWorkById(id);
       await createAuditLog(req, "upload_final_attachment", "work", id, id, { file_paths: newPaths });
-      return res.json(rows.find((item) => item.id === id) || null);
+      return res.json(work || null);
     } catch (uploadError) {
       return res.status(500).json({ error: uploadError?.message || "Erro ao guardar anexo final." });
     }
@@ -2077,8 +2077,7 @@ app.patch("/api/works/:id/priority", requireAuth, requireAdmin, async (req, res)
     const result = await query(`UPDATE obras SET ${schemaInfo.obrasPriorityColumn} = ? WHERE id = ?`, [priority, id]);
     if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_work_priority", "work", id, id, { priority });
     const users = await query("SELECT id FROM funcionarios");
     await sendPushToUsers(query, users.map((item) => item.id), {
@@ -2107,8 +2106,7 @@ app.patch("/api/works/:id/observations", requireAuth, async (req, res) => {
     );
     if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
 
-    const rows = await getWorks(null);
-    const work = rows.find((item) => item.id === id);
+    const work = await getWorkById(id);
     await createAuditLog(req, "update_work_observations", "work", id, id, {
       observations
     });
