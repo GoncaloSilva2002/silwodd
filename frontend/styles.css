@@ -1411,41 +1411,6 @@ body.role-funcionario .process-item-tools {
   gap: 0;
 }
 
-.logs-view-switch {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 0 0 16px;
-}
-
-.logs-view-btn {
-  width: auto;
-  padding: 9px 14px;
-  border: 1px solid var(--border);
-  border-radius: 9px;
-  background: #eeece3;
-  color: var(--text);
-}
-
-.logs-view-btn.active {
-  border-color: var(--primary);
-  background: var(--primary);
-  color: #fff;
-}
-
-.logs-history-controls {
-  display: grid;
-  gap: 6px;
-  max-width: 520px;
-  margin: 0 0 20px;
-}
-
-.logs-history-controls label {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .log-item {
   position: relative;
   display: grid;
@@ -2028,21 +1993,6 @@ body.role-funcionario .process-item-tools {
     gap: 8px;
     width: 100%;
     min-width: 0;
-  }
-
-  .logs-view-switch {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-
-  .logs-view-btn {
-    width: 100%;
-    padding: 8px 10px;
-    font-size: 12px;
-  }
-
-  .logs-history-controls {
-    max-width: none;
   }
 
   .log-item {

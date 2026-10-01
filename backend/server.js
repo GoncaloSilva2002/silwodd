@@ -810,17 +810,12 @@ async function createAuditLog(req, actionType, entityType, entityId = null, work
   }
 }
 
-async function getAuditLogs(limit = 200, workSearch = "", workIdFilter = null) {
+async function getAuditLogs(limit = 200, workSearch = "") {
   await ensureAuditLogsTable();
   const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
   const workTerm = String(workSearch || "").trim();
   const whereClauses = [];
   const params = [];
-
-  if (workIdFilter !== null) {
-    whereClauses.push("l.work_id = ?");
-    params.push(workIdFilter);
-  }
 
   if (workTerm) {
     const workId = Number(workTerm);
@@ -2249,7 +2244,7 @@ app.delete("/api/works/:id", requireAuth, requireAdmin, async (req, res) => {
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     const existing = await query("SELECT nome_obra FROM obras WHERE id = ? LIMIT 1", [id]);
     if (!existing[0]) return res.status(404).json({ error: "Obra não encontrada." });
-    await createAuditLog(req, "delete_work", "work", id, id, { title: existing[0].nome_obra });
+    await createAuditLog(req, "delete_work", "work", id, null, { title: existing[0].nome_obra });
     await query("DELETE FROM obras WHERE id = ?", [id]);
     return res.json({ ok: true });
   } catch (error) {
@@ -2366,15 +2361,7 @@ app.get("/api/logs", requireAuth, async (req, res) => {
   try {
     const limit = Number(req.query.limit || 200);
     const work = String(req.query.work || "");
-    const requestedWorkId = String(req.query.work_id || "").trim();
-    let workId = null;
-    if (requestedWorkId) {
-      workId = Number(requestedWorkId);
-      if (!Number.isInteger(workId) || workId <= 0) {
-        return res.status(400).json({ error: "ID de obra inválido." });
-      }
-    }
-    return res.json(await getAuditLogs(limit, work, workId));
+    return res.json(await getAuditLogs(limit, work));
   } catch (error) {
     return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao listar logs." });
   }
