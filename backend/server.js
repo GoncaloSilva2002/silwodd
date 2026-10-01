@@ -1243,6 +1243,32 @@ app.get("/api/public/works/:token", async (req, res) => {
   }
 });
 
+app.get("/api/public/calendar/events", async (req, res) => {
+  try {
+    const expectedToken = String(process.env.CALENDAR_DISPLAY_TOKEN || "").trim();
+    const suppliedToken = String(req.query.token || req.get("x-calendar-display-token") || "").trim();
+    if (!expectedToken) {
+      return res.status(503).json({ error: "O calendário da televisão ainda não está configurado." });
+    }
+
+    const expectedBuffer = Buffer.from(expectedToken);
+    const suppliedBuffer = Buffer.from(suppliedToken);
+    if (expectedBuffer.length !== suppliedBuffer.length || !crypto.timingSafeEqual(expectedBuffer, suppliedBuffer)) {
+      return res.status(401).json({ error: "Acesso ao calendário da televisão não autorizado." });
+    }
+
+    const rows = await query(
+      `SELECT id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas, work_id
+       FROM calendar_events
+       ORDER BY data ASC, id ASC`
+    );
+    res.set("Cache-Control", "no-store");
+    return res.json(rows.map(serializeCalendarEvent));
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao carregar o calendário da televisão." });
+  }
+});
+
 app.post("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);

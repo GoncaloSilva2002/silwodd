@@ -1,5 +1,8 @@
 .calendar-page-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .calendar-page-header p { margin: 6px 0 0; }
+.calendar-header-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; flex-wrap: wrap; }
+.calendar-tv-link { display: inline-block; width: auto; padding: 10px 12px; border-radius: 8px; background: #075985; color: #fff; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.calendar-tv-link:hover { background: #0284c7; }
 .calendar-view-switch { display: flex; gap: 8px; flex-wrap: wrap; }
 .calendar-view-switch button[aria-pressed="true"] { background: #0284c7; color: #fff; }
 .calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 12px; }
@@ -68,6 +71,7 @@ button.cal-day { cursor: pointer; }
 .calendar-event-actions .calendar-delete-btn { color: #b42318; }
 @media (max-width: 800px) {
   .calendar-page-header, .calendar-event-list-header { flex-direction: column; align-items: stretch; }
+  .calendar-header-actions { justify-content: flex-start; }
   .calendar-toolbar { flex-wrap: wrap; }
   .calendar-toolbar strong { font-size: 18px; }
   .calendar-root { margin-inline: -4px; }

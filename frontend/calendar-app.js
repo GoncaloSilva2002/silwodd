@@ -30,12 +30,6 @@
   let editingId = null;
   let loaded = false;
 
-  const stateLabels = {
-    ok: "Confirmado",
-    aviso: "Atrasado",
-    problema: "Urgente",
-  };
-
   function todayKey() {
     return Calendario.key(new Date());
   }
@@ -62,8 +56,9 @@
   }
 
   function eventDateLabel(item) {
-    const start = Calendario.date(item.data);
-    const end = item.data_fim && item.data_fim !== item.data ? Calendario.date(item.data_fim) : null;
+    const format = (value) => Calendario.date(value).toLocaleDateString("pt-PT");
+    const start = format(item.data);
+    const end = item.data_fim && item.data_fim !== item.data ? format(item.data_fim) : null;
     return end ? `${start} a ${end}` : start;
   }
 
@@ -74,7 +69,7 @@
     const query = (search?.value || "").trim().toLowerCase();
     const visible = Calendario
       .sorted(events)
-      .filter((item) => !query || `${item.titulo} ${item.notas || ""} ${eventLabel(item)}`.toLowerCase().includes(query));
+      .filter((item) => !query || `${item.titulo} ${eventLabel(item)}`.toLowerCase().includes(query));
 
     if (!visible.length) {
       list.innerHTML = `<p class="calendar-empty">${query ? "Nenhuma marcação encontrada." : "Ainda não existem marcações."}</p>`;
@@ -86,16 +81,14 @@
         <div class="calendar-event-row-main">
           <strong>${Calendario.esc(item.titulo)}</strong>
           <span>${Calendario.esc(eventDateLabel(item))} · ${Calendario.esc(eventLabel(item))}</span>
-          ${item.notas ? `<small>${Calendario.esc(item.notas)}</small>` : ""}
         </div>
-        <div class="calendar-event-row-meta">
-          <span class="calendar-status-badge calendar-status-${Calendario.esc(item.estado || "ok")}">${Calendario.esc(stateLabels[item.estado] || "Confirmado")}</span>
-          ${isAdmin ? `
+        ${isAdmin ? `
+          <div class="calendar-event-row-meta">
             <div class="calendar-event-actions">
               <button type="button" class="btn secondary small" data-calendar-edit="${Calendario.esc(String(item.id))}">Editar</button>
               <button type="button" class="btn secondary small calendar-delete-btn" data-calendar-delete="${Calendario.esc(String(item.id))}">Eliminar</button>
-            </div>` : ""}
-        </div>
+            </div>
+          </div>` : ""}
       </article>
     `).join("");
   }
