@@ -283,12 +283,17 @@ async function api(path, options = {}) {
     Authorization: `Bearer ${token}`,
     ...(options.headers || {})
   };
-  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+  const isFormData = options.body instanceof FormData;
+  const body = options.body && typeof options.body === "object" && !isFormData
+    ? JSON.stringify(options.body)
+    : options.body;
+  if (!isFormData && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
 
   const res = await fetch(window.apiUrl(path), {
     ...options,
+    body,
     headers
   });
 

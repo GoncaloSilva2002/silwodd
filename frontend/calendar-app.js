@@ -193,7 +193,7 @@
       const method = editingId ? "PATCH" : "POST";
       await window.api(endpoint, {
         method,
-        body: payload,
+        body: JSON.stringify(payload),
         successMessage: editingId ? "Marcação atualizada." : "Marcação adicionada.",
       });
       resetForm();
