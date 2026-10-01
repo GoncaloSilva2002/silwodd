@@ -1,8 +1,8 @@
 const { Pool, types } = require("pg");
 
-// Os IDs da aplicacao sao BIGINT no PostgreSQL. O pg devolve BIGINT como
-// string por omissao; aqui sao convertidos para Number para manter o contrato
-// que o backend e o frontend ja utilizavam com MySQL.
+// Os IDs da aplicação são BIGINT no PostgreSQL. O pg devolve BIGINT como
+// string por omissão; aqui são convertidos para Number para manter o contrato
+// que o backend e o frontend já utilizavam com MySQL.
 types.setTypeParser(20, (value) => Number(value));
 
 const connectionString = process.env.DATABASE_URL;

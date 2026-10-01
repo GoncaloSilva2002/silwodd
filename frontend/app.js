@@ -807,7 +807,7 @@ function formatLogAction(actionType) {
     create_work: "Criou obra",
     update_work_status: "Alterou estado da obra",
     update_work_priority: "Alterou prioridade da obra",
-    update_work_observations: "Alterou observacoes da obra",
+    update_work_observations: "Alterou observações da obra",
     create_material: "Adicionou material",
     update_material: "Alterou material",
     upload_material_order_note_pdf: "Anexou nota de encomenda",
@@ -1103,7 +1103,7 @@ function renderUsers(items) {
           class="delete-user-btn"
           data-user-id="${u.id}"
           ${canDelete ? "" : "disabled"}
-          title="${canDelete ? "Eliminar utilizador" : "Nao podes eliminar o teu utilizador"}"
+          title="${canDelete ? "Eliminar utilizador" : "Não podes eliminar o teu utilizador"}"
           aria-label="Eliminar utilizador"
         >
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
@@ -1769,7 +1769,7 @@ if (usersList) {
     const userId = Number(button.dataset.userId);
     if (!Number.isInteger(userId) || userId <= 0) return;
 
-    const confirmed = window.confirm("Tem certeza que quer eliminar este utilizador?");
+    const confirmed = window.confirm("Tem a certeza de que quer eliminar este utilizador?");
     if (!confirmed) return;
 
     button.disabled = true;

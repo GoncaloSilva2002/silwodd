@@ -1,0 +1,48 @@
+{
+  "eventos": [
+    {
+      "id": "d4e7a3b5-468c-427a-847b-52a984c4998a",
+      "titulo": "Luís",
+      "data": "2026-09-24",
+      "data_fim": "",
+      "categoria": "normal",
+      "etapa": "camiao",
+      "tipo": "camiao",
+      "estado": "ok",
+      "notas": ""
+    },
+    {
+      "id": "f5f8311b-54a2-43b9-bae1-28788f128675",
+      "titulo": "quim",
+      "data": "2026-09-24",
+      "data_fim": "",
+      "categoria": "normal",
+      "etapa": "corte",
+      "tipo": "corte",
+      "estado": "ok",
+      "notas": ""
+    },
+    {
+      "id": "7f450bdd-857e-4786-bed7-ad8b4877b5fa",
+      "titulo": "Férias / Feriado / Ponte",
+      "data": "2026-12-16",
+      "data_fim": "2026-12-31",
+      "categoria": "especial",
+      "etapa": "especial",
+      "tipo": "",
+      "estado": "ok",
+      "notas": ""
+    },
+    {
+      "id": "42ee3675-a216-4e56-afda-5f86eb0b5cd9",
+      "titulo": "quim",
+      "data": "2026-09-24",
+      "data_fim": "",
+      "categoria": "normal",
+      "etapa": "orlar",
+      "tipo": "orlar",
+      "estado": "ok",
+      "notas": "quim,ze"
+    }
+  ]
+}

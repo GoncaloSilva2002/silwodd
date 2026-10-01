@@ -1,10 +1,10 @@
 self.addEventListener("push", (event) => {
   let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch (_error) { data = { title: "Silwood", body: event.data?.text() || "Nova notificacao" }; }
+  try { data = event.data ? event.data.json() : {}; } catch (_error) { data = { title: "Silwood", body: event.data?.text() || "Nova notificação" }; }
   event.waitUntil((async () => {
     if (self.registration.setAppBadge) await self.registration.setAppBadge(data.unread || 1);
     await self.registration.showNotification(data.title || "Silwood", {
-      body: data.body || data.title || "Tens uma nova notificacao.",
+      body: data.body || data.title || "Tens uma nova notificação.",
       icon: "/images.png",
       badge: "/images.png",
       silent: false,

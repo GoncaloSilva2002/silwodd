@@ -10,6 +10,7 @@
     <link rel="apple-touch-icon" href="/images.png" />
     <title>Silwood</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/calendar.css" />
   </head>
   <body>
     <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="true"></div>
@@ -62,11 +63,52 @@
           </div>
         </section>
         <section id="tab-calendario" class="hidden">
-          <div class="aspiracao-card">
-            <h2>Calendário</h2>
-            <p class="muted">Abre o calendário da empresa numa nova janela.</p>
-            <a class="button-link" href="http://192.168.1.88:8000/empresa.html" target="_blank" rel="noopener noreferrer">Abrir calendário</a>
+          <div class="calendar-page-header">
+            <div>
+              <h2>Calendário</h2>
+              <p class="muted">Planeia trabalhos, etapas, férias e feriados na mesma aplicação.</p>
+            </div>
+            <div class="calendar-view-switch" role="group" aria-label="Vista do calendário">
+              <button type="button" data-calendar-view="semanas" aria-pressed="false">Semanas</button>
+              <button type="button" data-calendar-view="mes" aria-pressed="true">Mês</button>
+              <button type="button" data-calendar-view="ano" aria-pressed="false">Ano</button>
+            </div>
           </div>
+          <div class="calendar-toolbar">
+            <strong id="calendar-period"></strong>
+            <div>
+              <button type="button" data-calendar-step="-1" aria-label="Período anterior">←</button>
+              <button type="button" data-calendar-step="today">Hoje</button>
+              <button type="button" data-calendar-step="1" aria-label="Período seguinte">→</button>
+            </div>
+          </div>
+          <div id="calendar-root" class="calendar-root"></div>
+
+          <div id="calendar-editor" class="calendar-editor hidden">
+            <h3 id="calendar-form-heading">Adicionar marcação</h3>
+            <form id="calendar-event-form">
+              <div class="calendar-editor-fields">
+                <label>Descrição<input id="event-title" maxlength="160" required placeholder="Ex.: Fim da obra em Braga" /></label>
+                <label>Data<input id="event-date" type="date" required /></label>
+                <label>Até<input id="event-end-date" type="date" /></label>
+                <label>Tipo de dia<select id="event-day-kind"><option value="normal">Planeamento</option><option value="especial">Férias / Feriado / Ponte</option></select></label>
+                <label>Etapa<select id="event-stage" required><option value="corte">Corte</option><option value="orlar">Orlar</option><option value="cnc">CNC</option><option value="embalar">Embalar</option><option value="montagem_fabrica">Montagem Fábrica</option><option value="pintura">Pintura</option><option value="montagem_obra">Montagem Obra</option><option value="obra">Fim de obra</option><option value="camiao">Carregar camião</option></select></label>
+                <label>Estado<select id="event-state"><option value="ok">Dentro do planeado</option><option value="aviso">Atrasado</option><option value="problema">Urgente</option></select></label>
+                <label>Notas<input id="event-notes" maxlength="500" placeholder="Obra, local, responsável…" /></label>
+              </div>
+              <div class="calendar-editor-actions">
+                <button type="submit" id="event-submit">Adicionar marcação</button>
+                <button type="button" id="event-cancel" class="secondary-btn hidden">Cancelar edição</button>
+              </div>
+            </form>
+            <p id="calendar-status" class="calendar-status" role="status"></p>
+          </div>
+
+          <div class="calendar-event-list-header">
+            <h3>Marcações guardadas</h3>
+            <input id="event-search" type="search" placeholder="Pesquisar pelo nome…" aria-label="Pesquisar marcações pelo nome" />
+          </div>
+          <div id="event-list" class="calendar-event-list"></div>
         </section>
         <section id="tab-chat" class="hidden">
           <h2>Chat</h2>
@@ -269,6 +311,8 @@
       </section>
     </main>
     <script src="/app.js"></script>
+    <script src="/calendar.js"></script>
+    <script src="/calendar-app.js"></script>
     <script src="/chat.js"></script>
     <script src="/notifications.js"></script>
   </body>

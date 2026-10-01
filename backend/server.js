@@ -99,7 +99,7 @@ app.use(
       if (!origin) return callback(null, true);
       if (!isProd) return callback(null, true);
       if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("Origem nao permitida por CORS."));
+      return callback(new Error("Origem não permitida por CORS."));
     }
   })
 );
@@ -134,7 +134,7 @@ const upload = multer({
     const original = String(file.originalname || "").toLowerCase();
     const looksLikePdf = original.endsWith(".pdf");
     if (file.mimetype !== "application/pdf" || !looksLikePdf) {
-      return cb(new Error("Apenas ficheiros PDF sao permitidos."));
+      return cb(new Error("Apenas ficheiros PDF são permitidos."));
     }
     return cb(null, true);
   },
@@ -145,7 +145,7 @@ const imageUpload = multer({
   storage: multer.memoryStorage(),
   fileFilter: (_req, file, cb) => {
     if (!String(file.mimetype || "").startsWith("image/")) {
-      return cb(new Error("Apenas imagens sao permitidas."));
+      return cb(new Error("Apenas imagens são permitidas."));
     }
     return cb(null, true);
   },
@@ -157,7 +157,7 @@ const documentUpload = multer({
   fileFilter: (_req, file, cb) => {
     const mime = String(file.mimetype || "").toLowerCase();
     if (mime !== "application/pdf" && !mime.startsWith("image/")) {
-      return cb(new Error("Apenas ficheiros PDF ou imagens sao permitidos."));
+      return cb(new Error("Apenas ficheiros PDF ou imagens são permitidos."));
     }
     return cb(null, true);
   },
@@ -166,7 +166,7 @@ const documentUpload = multer({
 
 function requireAdmin(req, res, next) {
   if (req.user?.role !== "admin") {
-    return res.status(403).json({ error: "Apenas admin pode executar esta acao." });
+    return res.status(403).json({ error: "Apenas um administrador pode executar esta ação." });
   }
   return next();
 }
@@ -318,7 +318,7 @@ async function ensureInitialAdmin() {
   const password = String(process.env.INITIAL_ADMIN_PASSWORD || "");
   if (!username && !password) return;
   if (!username || password.length < 6) {
-    throw new Error("INITIAL_ADMIN_USERNAME e INITIAL_ADMIN_PASSWORD (minimo 6 caracteres) sao obrigatorios em conjunto.");
+    throw new Error("INITIAL_ADMIN_USERNAME e INITIAL_ADMIN_PASSWORD (mínimo 6 caracteres) são obrigatórios em conjunto.");
   }
 
   const existingUsers = await query("SELECT id FROM funcionarios LIMIT 1");
@@ -456,6 +456,65 @@ function normalizeProcessStepLabel(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function isCalendarDate(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const parsed = new Date(`${value}T12:00:00`);
+  return !Number.isNaN(parsed.getTime())
+    && parsed.getFullYear() === Number(match[1])
+    && parsed.getMonth() + 1 === Number(match[2])
+    && parsed.getDate() === Number(match[3]);
+}
+
+function normalizeCalendarEventPayload(body = {}) {
+  const titulo = normalizeProcessStepLabel(body.titulo ?? body.title);
+  const data = String(body.data ?? body.date ?? "").trim();
+  const dataFim = String(body.data_fim ?? body.end_date ?? "").trim() || null;
+  const categoria = body.categoria === "especial" || body.day_kind === "especial" ? "especial" : "normal";
+  const etapa = categoria === "especial" ? "especial" : normalizeProcessStepLabel(body.etapa ?? body.stage);
+  const estado = ["ok", "aviso", "problema"].includes(body.estado ?? body.state)
+    ? (body.estado ?? body.state)
+    : "ok";
+  const notas = String(body.notas ?? body.notes ?? "").trim() || null;
+
+  if (!titulo) return { error: "A descrição da marcação é obrigatória." };
+  if (titulo.length > 160) return { error: "A descrição da marcação é demasiado longa." };
+  if (!isCalendarDate(data)) return { error: "Indica uma data válida para a marcação." };
+  if (dataFim && !isCalendarDate(dataFim)) return { error: "Indica uma data final válida." };
+  if (dataFim && dataFim < data) return { error: "A data final deve ser igual ou posterior à data inicial." };
+  if (categoria === "normal" && !etapa) return { error: "Seleciona uma etapa para a marcação." };
+  if (etapa.length > 80) return { error: "A etapa da marcação é demasiado longa." };
+  if (notas && notas.length > 500) return { error: "As notas da marcação são demasiado longas." };
+
+  return {
+    value: {
+      titulo,
+      data,
+      data_fim: dataFim,
+      categoria,
+      etapa,
+      tipo: categoria === "especial" ? null : etapa,
+      estado,
+      notas
+    }
+  };
+}
+
+function serializeCalendarEvent(row) {
+  return {
+    id: row.id,
+    titulo: row.titulo,
+    data: String(row.data || "").slice(0, 10),
+    data_fim: row.data_fim ? String(row.data_fim).slice(0, 10) : "",
+    categoria: row.categoria || "normal",
+    especial: row.categoria === "especial" ? "especial" : "",
+    etapa: row.etapa || "",
+    tipo: row.tipo || "",
+    estado: row.estado || "ok",
+    notas: row.notas || ""
+  };
+}
+
 function getProcessStepKeyByName(stepName) {
   return processStepNameToKey.get(stepName) || null;
 }
@@ -576,6 +635,60 @@ async function recalculateWorkStatusFromProcessSteps(workId) {
   const pendingEstadoId = await getEstadoIdFromCode("pending");
   if (pendingEstadoId) {
     await query("UPDATE obras SET id_estado = ? WHERE id = ?", [pendingEstadoId, workId]);
+  }
+}
+
+async function ensureCalendarEventsTable() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS calendar_events (
+      id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      titulo VARCHAR(160) NOT NULL,
+      data DATE NOT NULL,
+      data_fim DATE NULL,
+      categoria VARCHAR(30) NOT NULL DEFAULT 'normal',
+      etapa VARCHAR(80) NULL,
+      tipo VARCHAR(80) NULL,
+      estado VARCHAR(20) NOT NULL DEFAULT 'ok',
+      notas VARCHAR(500) NULL,
+      created_by_user_id BIGINT NULL,
+      created_by_username VARCHAR(120) NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_date ON calendar_events(data)");
+  await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_end_date ON calendar_events(data_fim)");
+  await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_stage ON calendar_events(etapa)");
+
+  const countRows = await query("SELECT COUNT(*) AS total FROM calendar_events");
+  if (Number(countRows[0]?.total || 0) > 0) return;
+
+  const seedPath = path.join(__dirname, "calendar-seed.json");
+  if (!fs.existsSync(seedPath)) return;
+  try {
+    const seed = JSON.parse(fs.readFileSync(seedPath, "utf8"));
+    const events = Array.isArray(seed) ? seed : seed.eventos;
+    if (!Array.isArray(events)) return;
+    for (const event of events) {
+      const normalized = normalizeCalendarEventPayload(event);
+      if (!normalized.value) continue;
+      await query(
+        `INSERT INTO calendar_events (titulo, data, data_fim, categoria, etapa, tipo, estado, notas)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          normalized.value.titulo,
+          normalized.value.data,
+          normalized.value.data_fim,
+          normalized.value.categoria,
+          normalized.value.etapa,
+          normalized.value.tipo,
+          normalized.value.estado,
+          normalized.value.notas
+        ]
+      );
+    }
+  } catch (error) {
+    console.error("Erro ao importar o calendário inicial:", error.message);
   }
 }
 
@@ -1009,7 +1122,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const { username, password } = req.body || {};
     if (!username || !password) {
-      return res.status(400).json({ error: "Username e password sao obrigatorios." });
+      return res.status(400).json({ error: "Username e password são obrigatórios." });
     }
 
     const rows = await query(
@@ -1017,7 +1130,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
       [username]
     );
     const user = rows[0];
-    if (!user) return res.status(401).json({ error: "Credenciais invalidas." });
+    if (!user) return res.status(401).json({ error: "Credenciais inválidas." });
 
     const storedPassword = String(user.password || "");
     const isBcryptHash = /^\$2[aby]\$\d{2}\$/.test(storedPassword);
@@ -1032,7 +1145,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
       isMatch = true;
     }
 
-    if (!isMatch) return res.status(401).json({ error: "Credenciais invalidas." });
+    if (!isMatch) return res.status(401).json({ error: "Credenciais inválidas." });
 
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
@@ -1051,7 +1164,7 @@ app.get("/api/public/works/:token", async (req, res) => {
   try {
     const token = String(req.params.token || "");
     if (!/^[a-f0-9]{64}$/i.test(token)) {
-      return res.status(404).json({ error: "Link invalido ou expirado." });
+      return res.status(404).json({ error: "Link inválido ou expirado." });
     }
     const rows = await query(
       `SELECT o.id, o.nome_obra, o.data_fim_prevista, e.nome AS estado_nome
@@ -1062,7 +1175,7 @@ app.get("/api/public/works/:token", async (req, res) => {
       [hashPublicAccessToken(token)]
     );
     const work = rows[0];
-    if (!work) return res.status(404).json({ error: "Link invalido ou expirado." });
+    if (!work) return res.status(404).json({ error: "Link inválido ou expirado." });
 
     const steps = await query(
       `SELECT nome_etapa, concluida, order_index
@@ -1088,9 +1201,9 @@ app.get("/api/public/works/:token", async (req, res) => {
 app.post("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     const existing = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [id]);
-    if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!existing[0]) return res.status(404).json({ error: "Obra não encontrada." });
     const token = crypto.randomBytes(32).toString("hex");
     await query(
       "UPDATE obras SET public_access_token_hash = ?, public_access_token = ?, public_access_created_at = NOW() WHERE id = ?",
@@ -1107,9 +1220,9 @@ app.post("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, re
 app.delete("/api/works/:id/public-link", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     const result = await query("UPDATE obras SET public_access_token_hash = NULL, public_access_token = NULL, public_access_created_at = NULL WHERE id = ?", [id]);
-    if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!result.affectedRows) return res.status(404).json({ error: "Obra não encontrada." });
     await createAuditLog(req, "revoke_public_link", "work", id, id);
     return res.json({ success: true });
   } catch (error) {
@@ -1131,6 +1244,112 @@ app.get("/api/works", requireAuth, async (req, res) => {
   }
 });
 
+app.get("/api/calendar/events", requireAuth, async (req, res) => {
+  try {
+    const from = String(req.query.from || "").trim();
+    const to = String(req.query.to || "").trim();
+    if ((from && !isCalendarDate(from)) || (to && !isCalendarDate(to))) {
+      return res.status(400).json({ error: "O intervalo do calendário é inválido." });
+    }
+    if (from && to && to < from) {
+      return res.status(400).json({ error: "A data final deve ser posterior à data inicial." });
+    }
+
+    const where = [];
+    const params = [];
+    if (from) {
+      where.push("COALESCE(data_fim, data) >= ?");
+      params.push(from);
+    }
+    if (to) {
+      where.push("data <= ?");
+      params.push(to);
+    }
+    const rows = await query(
+      `SELECT id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas
+       FROM calendar_events
+       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+       ORDER BY data ASC, id ASC`,
+      params
+    );
+    return res.json(rows.map(serializeCalendarEvent));
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao carregar o calendário." });
+  }
+});
+
+app.post("/api/calendar/events", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const normalized = normalizeCalendarEventPayload(req.body);
+    if (normalized.error) return res.status(400).json({ error: normalized.error });
+    const rows = await query(
+      `INSERT INTO calendar_events (titulo, data, data_fim, categoria, etapa, tipo, estado, notas, created_by_user_id, created_by_username)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas`,
+      [
+        normalized.value.titulo,
+        normalized.value.data,
+        normalized.value.data_fim,
+        normalized.value.categoria,
+        normalized.value.etapa,
+        normalized.value.tipo,
+        normalized.value.estado,
+        normalized.value.notas,
+        req.user?.id || null,
+        req.user?.username || null
+      ]
+    );
+    await createAuditLog(req, "create_calendar_event", "calendar_event", rows[0].id, null, normalized.value);
+    return res.status(201).json(serializeCalendarEvent(rows[0]));
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao criar a marcação." });
+  }
+});
+
+app.patch("/api/calendar/events/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de marcação inválido." });
+    const normalized = normalizeCalendarEventPayload(req.body);
+    if (normalized.error) return res.status(400).json({ error: normalized.error });
+    const rows = await query(
+      `UPDATE calendar_events
+       SET titulo = ?, data = ?, data_fim = ?, categoria = ?, etapa = ?, tipo = ?, estado = ?, notas = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?
+       RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas`,
+      [
+        normalized.value.titulo,
+        normalized.value.data,
+        normalized.value.data_fim,
+        normalized.value.categoria,
+        normalized.value.etapa,
+        normalized.value.tipo,
+        normalized.value.estado,
+        normalized.value.notas,
+        id
+      ]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Marcação não encontrada." });
+    await createAuditLog(req, "update_calendar_event", "calendar_event", id, null, normalized.value);
+    return res.json(serializeCalendarEvent(rows[0]));
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar a marcação." });
+  }
+});
+
+app.delete("/api/calendar/events/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de marcação inválido." });
+    const result = await query("DELETE FROM calendar_events WHERE id = ?", [id]);
+    if (!result.affectedRows) return res.status(404).json({ error: "Marcação não encontrada." });
+    await createAuditLog(req, "delete_calendar_event", "calendar_event", id, null);
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar a marcação." });
+  }
+});
+
 app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
   try {
     const {
@@ -1146,31 +1365,31 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     const allowed = ["pending", "in_progress", "done", "suspended"];
 
     if (!title || !String(title).trim()) {
-      return res.status(400).json({ error: "O titulo da obra e obrigatorio." });
+      return res.status(400).json({ error: "O título da obra é obrigatório." });
     }
     if (status && !allowed.includes(status)) {
-      return res.status(400).json({ error: "Estado de obra invalido." });
+      return res.status(400).json({ error: "Estado de obra inválido." });
     }
 
     const priorityValue = normalizePriority(priority);
     const parentWorkId = parentWorkIdInput ? Number(parentWorkIdInput) : null;
     if (parentWorkId !== null && (!Number.isInteger(parentWorkId) || parentWorkId <= 0)) {
-      return res.status(400).json({ error: "Obra principal invalida." });
+      return res.status(400).json({ error: "Obra principal inválida." });
     }
     if (parentWorkId !== null) {
       const parent = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [parentWorkId]);
-      if (!parent[0]) return res.status(400).json({ error: "Obra principal nao encontrada." });
+      if (!parent[0]) return res.status(400).json({ error: "Obra principal não encontrada." });
     }
 
     let parsedClientId = null;
     if (clientId !== null && clientId !== undefined && String(clientId).trim() !== "") {
       parsedClientId = Number(clientId);
       if (!Number.isInteger(parsedClientId) || parsedClientId <= 0) {
-        return res.status(400).json({ error: "Cliente invalido." });
+        return res.status(400).json({ error: "Cliente inválido." });
       }
       const byId = await query("SELECT id FROM clientes WHERE id = ? LIMIT 1", [parsedClientId]);
       if (!byId[0]) {
-        return res.status(400).json({ error: "Cliente nao encontrado." });
+        return res.status(400).json({ error: "Cliente não encontrado." });
       }
     } else if (clientName && String(clientName).trim()) {
       const byName = await query(
@@ -1180,19 +1399,19 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
       if (byName.length === 1) {
         parsedClientId = byName[0].id;
       } else if (byName.length > 1) {
-        return res.status(400).json({ error: "Existem varios clientes com esse nome. Escolhe um da lista." });
+        return res.status(400).json({ error: "Existem vários clientes com esse nome. Escolhe um da lista." });
       } else {
-        return res.status(400).json({ error: "Cliente nao encontrado." });
+        return res.status(400).json({ error: "Cliente não encontrado." });
       }
     }
 
     if (!parsedClientId) {
-      return res.status(400).json({ error: "Seleciona um cliente valido da lista." });
+      return res.status(400).json({ error: "Seleciona um cliente válido da lista." });
     }
 
     const estadoId = await getEstadoIdFromCode(status || "pending");
     if (!estadoId) {
-      return res.status(400).json({ error: "Estado nao encontrado na tabela estados." });
+      return res.status(400).json({ error: "Estado não encontrado na tabela de estados." });
     }
 
     const nextWorkId = await getNextTableId("obras");
@@ -1238,19 +1457,19 @@ app.patch("/api/works/:id/parent", requireAuth, requireAdmin, async (req, res) =
   try {
     const id = Number(req.params.id);
     const parentId = req.body?.parent_work_id ? Number(req.body.parent_work_id) : null;
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     if (parentId !== null && (!Number.isInteger(parentId) || parentId <= 0)) {
-      return res.status(400).json({ error: "Obra principal invalida." });
+      return res.status(400).json({ error: "Obra principal inválida." });
     }
-    if (parentId === id) return res.status(400).json({ error: "Uma obra nao pode ser grupo de si propria." });
+    if (parentId === id) return res.status(400).json({ error: "Uma obra não pode ser grupo de si própria." });
     const existing = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [id]);
-    if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!existing[0]) return res.status(404).json({ error: "Obra não encontrada." });
     if (parentId !== null) {
       const parent = await query("SELECT id FROM obras WHERE id = ? LIMIT 1", [parentId]);
-      if (!parent[0]) return res.status(404).json({ error: "Obra principal nao encontrada." });
+      if (!parent[0]) return res.status(404).json({ error: "Obra principal não encontrada." });
       const descendants = await query("SELECT id FROM obras WHERE id_obra_principal = ?", [id]);
       if (descendants.some((row) => Number(row.id) === parentId)) {
-        return res.status(400).json({ error: "Nao e possivel criar uma hierarquia circular." });
+        return res.status(400).json({ error: "Não é possível criar uma hierarquia circular." });
       }
     }
     await query("UPDATE obras SET id_obra_principal = ? WHERE id = ?", [parentId, id]);
@@ -1266,21 +1485,21 @@ app.patch("/api/works/:id/status", requireAuth, requireAdmin, async (req, res) =
     const id = Number(req.params.id);
     const status = req.body?.status;
     const allowed = ["pending", "in_progress", "done", "suspended"];
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!allowed.includes(status)) return res.status(400).json({ error: "Estado de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!allowed.includes(status)) return res.status(400).json({ error: "Estado de obra inválido." });
 
     if (status === "in_progress") {
       const firstStepDone = await isWorkReadyForInProgress(id);
       if (!firstStepDone) {
-        return res.status(400).json({ error: "A obra so pode passar para Em progresso depois da primeira etapa estar concluida." });
+        return res.status(400).json({ error: "A obra só pode passar para Em progresso depois de a primeira etapa estar concluída." });
       }
     }
 
     const estadoId = await getEstadoIdFromCode(status);
-    if (!estadoId) return res.status(400).json({ error: "Estado nao encontrado na tabela estados." });
+    if (!estadoId) return res.status(400).json({ error: "Estado não encontrado na tabela de estados." });
 
     const result = await query("UPDATE obras SET id_estado = ? WHERE id = ?", [estadoId, id]);
-    if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!result.affectedRows) return res.status(404).json({ error: "Obra não encontrada." });
 
     const work = await getWorkById(id);
     await createAuditLog(req, "update_work_status", "work", id, id, { status });
@@ -1294,8 +1513,8 @@ app.patch("/api/works/:id/materials/:materialKey", requireAuth, async (req, res)
   try {
     const id = Number(req.params.id);
     const { materialKey } = req.params;
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!materialKeys.has(materialKey)) return res.status(400).json({ error: "Material invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!materialKeys.has(materialKey)) return res.status(400).json({ error: "Material inválido." });
 
     const ordered = req.body?.ordered === true || req.body?.ordered === "true";
     const arrived = req.body?.arrived === true || req.body?.arrived === "true";
@@ -1359,16 +1578,16 @@ app.post("/api/works/:id/materials", requireAuth, requireAdmin, async (req, res)
   try {
     const id = Number(req.params.id);
     const label = normalizeMaterialLabel(req.body?.label);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!label) return res.status(400).json({ error: "O nome do material e obrigatorio." });
-    if (label.length > 120) return res.status(400).json({ error: "O nome do material e demasiado longo." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!label) return res.status(400).json({ error: "O nome do material é obrigatório." });
+    if (label.length > 120) return res.status(400).json({ error: "O nome do material é demasiado longo." });
 
     const existing = await query(
       "SELECT id FROM materiais WHERE id_obra = ? AND LOWER(nome_material) = LOWER(?) ORDER BY id DESC LIMIT 1",
       [id, label]
     );
     if (existing[0]) {
-      return res.status(409).json({ error: "Ja existe um material com esse nome nesta obra." });
+      return res.status(409).json({ error: "Já existe um material com esse nome nesta obra." });
     }
 
     const nextMaterialId = await getNextTableId("materiais");
@@ -1389,8 +1608,8 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
   try {
     const id = Number(req.params.id);
     const materialId = Number(req.params.materialId);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material inválido." });
 
     const ordered = req.body?.ordered === true || req.body?.ordered === "true";
     const arrived = req.body?.arrived === true || req.body?.arrived === "true";
@@ -1398,7 +1617,7 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
       "SELECT id, nome_material, invoice_photo_path, note_encomenda_pdf_path FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
       [materialId, id]
     );
-    if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+    if (!existing[0]) return res.status(404).json({ error: "Material não encontrado." });
     await query(
       `UPDATE materiais
        SET encomendado = ?, chegou = ?,
@@ -1442,8 +1661,8 @@ app.patch("/api/works/:id/materials/item/:materialId", requireAuth, async (req, 
 app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const materialId = Number(req.params.materialId);
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material inválido." });
 
   documentUpload.single("file")(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
@@ -1454,7 +1673,7 @@ app.post("/api/works/:id/materials/item/:materialId/order-note-pdf", requireAuth
         "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
         [materialId, id]
       );
-      if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+      if (!existing[0]) return res.status(404).json({ error: "Material não encontrado." });
 
       const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}/order-notes`);
       await query(
@@ -1478,14 +1697,14 @@ app.delete("/api/works/:id/materials/item/:materialId", requireAuth, requireAdmi
   try {
     const id = Number(req.params.id);
     const materialId = Number(req.params.materialId);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material inválido." });
 
     const existing = await query(
       "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
       [materialId, id]
     );
-    if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+    if (!existing[0]) return res.status(404).json({ error: "Material não encontrado." });
 
     await query("DELETE FROM materiais WHERE id = ? AND id_obra = ?", [materialId, id]);
     const work = await getWorkById(id);
@@ -1500,20 +1719,20 @@ async function updateProcessStepDone(req, workId, stepId, done) {
   const steps = await normalizeProcessStepOrder(workId);
   const stepIndex = steps.findIndex((step) => Number(step.id) === Number(stepId));
   if (stepIndex < 0) {
-    throw new Error("Etapa nao encontrada.");
+    throw new Error("Etapa não encontrada.");
   }
 
   if (done && stepIndex > 0) {
     const previousDone = Number(Boolean(steps[stepIndex - 1].concluida));
     if (!previousDone) {
-      throw new Error("Conclui a etapa anterior antes de avancar.");
+      throw new Error("Conclui a etapa anterior antes de avançar.");
     }
   }
 
   if (!done) {
     for (let index = stepIndex + 1; index < steps.length; index += 1) {
       if (Number(Boolean(steps[index].concluida)) === 1) {
-        throw new Error("Nao podes desmarcar esta etapa enquanto existirem etapas seguintes concluidas.");
+        throw new Error("Não podes desmarcar esta etapa enquanto existirem etapas seguintes concluídas.");
       }
     }
   }
@@ -1536,16 +1755,16 @@ app.post("/api/works/:id/process", requireAuth, requireAdmin, async (req, res) =
   try {
     const id = Number(req.params.id);
     const label = normalizeProcessStepLabel(req.body?.label);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!label) return res.status(400).json({ error: "O nome da etapa e obrigatorio." });
-    if (label.length > 120) return res.status(400).json({ error: "O nome da etapa e demasiado longo." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!label) return res.status(400).json({ error: "O nome da etapa é obrigatório." });
+    if (label.length > 120) return res.status(400).json({ error: "O nome da etapa é demasiado longo." });
 
     const existing = await query(
       "SELECT id FROM obra_etapas WHERE id_obra = ? AND LOWER(nome_etapa) = LOWER(?) LIMIT 1",
       [id, label]
     );
     if (existing[0]) {
-      return res.status(409).json({ error: "Ja existe uma etapa com esse nome nesta obra." });
+      return res.status(409).json({ error: "Já existe uma etapa com esse nome nesta obra." });
     }
 
     const rows = await getOrderedProcessSteps(id);
@@ -1569,18 +1788,18 @@ app.patch("/api/works/:id/process/reorder", requireAuth, requireAdmin, async (re
   try {
     const id = Number(req.params.id);
     const stepIds = Array.isArray(req.body?.stepIds) ? req.body.stepIds.map((item) => Number(item)) : [];
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
 
     const rows = await getOrderedProcessSteps(id);
-    if (!rows.length) return res.status(400).json({ error: "Nao existem etapas para ordenar." });
+    if (!rows.length) return res.status(400).json({ error: "Não existem etapas para ordenar." });
     if (stepIds.length !== rows.length) {
-      return res.status(400).json({ error: "A nova ordem das etapas esta incompleta." });
+      return res.status(400).json({ error: "A nova ordem das etapas está incompleta." });
     }
 
     const currentIds = new Set(rows.map((row) => Number(row.id)));
     const nextIds = new Set(stepIds);
     if (currentIds.size !== nextIds.size || stepIds.some((stepId) => !currentIds.has(stepId))) {
-      return res.status(400).json({ error: "A ordem indicada contem etapas invalidas." });
+      return res.status(400).json({ error: "A ordem indicada contém etapas inválidas." });
     }
 
     for (const [index, stepId] of stepIds.entries()) {
@@ -1600,14 +1819,14 @@ app.delete("/api/works/:id/process/item/:stepId", requireAuth, requireAdmin, asy
   try {
     const id = Number(req.params.id);
     const stepId = Number(req.params.stepId);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa invalida." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa inválida." });
 
     const existing = await query(
       "SELECT id, nome_etapa FROM obra_etapas WHERE id = ? AND id_obra = ? LIMIT 1",
       [stepId, id]
     );
-    if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
+    if (!existing[0]) return res.status(404).json({ error: "Etapa não encontrada." });
 
     await query("DELETE FROM obra_etapas WHERE id = ? AND id_obra = ?", [stepId, id]);
     await normalizeProcessStepOrder(id);
@@ -1625,15 +1844,15 @@ app.patch("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) =
   try {
     const id = Number(req.params.id);
     const stepId = Number(req.params.stepId);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa invalida." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!Number.isInteger(stepId) || stepId <= 0) return res.status(400).json({ error: "Etapa inválida." });
 
     const done = req.body?.done === true || req.body?.done === "true";
     const existing = await query(
       "SELECT id, nome_etapa FROM obra_etapas WHERE id = ? AND id_obra = ? LIMIT 1",
       [stepId, id]
     );
-    if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
+    if (!existing[0]) return res.status(404).json({ error: "Etapa não encontrada." });
 
     await updateProcessStepDone(req, id, stepId, done);
     const work = await getWorkById(id);
@@ -1645,7 +1864,7 @@ app.patch("/api/works/:id/process/item/:stepId", requireAuth, async (req, res) =
     return res.json(work || null);
   } catch (error) {
     const message = error?.message || "Erro ao atualizar etapa.";
-    const status = message.includes("antes de avancar") || message.includes("etapas seguintes") || message.includes("nao encontrada")
+    const status = message.includes("antes de avançar") || message.includes("etapas seguintes") || message.includes("não encontrada")
       ? 400
       : 500;
     return res.status(status).json({ error: message });
@@ -1656,15 +1875,15 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { stepKey } = req.params;
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-    if (!processStepKeys.has(stepKey)) return res.status(400).json({ error: "Etapa invalida." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+    if (!processStepKeys.has(stepKey)) return res.status(400).json({ error: "Etapa inválida." });
 
     const stepName = processStepMap[stepKey];
     const existing = await query(
       "SELECT id FROM obra_etapas WHERE id_obra = ? AND nome_etapa = ? LIMIT 1",
       [id, stepName]
     );
-    if (!existing[0]) return res.status(404).json({ error: "Etapa nao encontrada." });
+    if (!existing[0]) return res.status(404).json({ error: "Etapa não encontrada." });
 
     const done = req.body?.done === true || req.body?.done === "true";
     await updateProcessStepDone(req, id, existing[0].id, done);
@@ -1673,7 +1892,7 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
     return res.json(work || null);
   } catch (error) {
     const message = error?.message || "Erro ao atualizar etapa.";
-    const status = message.includes("antes de avancar") || message.includes("etapas seguintes") || message.includes("nao encontrada")
+    const status = message.includes("antes de avançar") || message.includes("etapas seguintes") || message.includes("não encontrada")
       ? 400
       : 500;
     return res.status(status).json({ error: message });
@@ -1683,9 +1902,9 @@ app.patch("/api/works/:id/process/:stepKey", requireAuth, async (req, res) => {
 app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const { stepKey } = req.params;
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
   if (stepKey !== "kitchen_design" && stepKey !== "assembly") {
-    return res.status(400).json({ error: "Esta etapa nao permite anexos." });
+    return res.status(400).json({ error: "Esta etapa não permite anexos." });
   }
 
   documentUpload.array("files", 20)(req, res, async (error) => {
@@ -1738,8 +1957,8 @@ app.post("/api/works/:id/process/:stepKey/upload", requireAuth, async (req, res)
 app.post("/api/works/:id/materials/:materialKey/upload", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const { materialKey } = req.params;
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-  if (!materialKeys.has(materialKey)) return res.status(400).json({ error: "Material invalido." });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+  if (!materialKeys.has(materialKey)) return res.status(400).json({ error: "Material inválido." });
 
   upload.single("pdf")(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do PDF." });
@@ -1779,8 +1998,8 @@ app.post("/api/works/:id/materials/:materialKey/upload", requireAuth, async (req
 app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const materialId = Number(req.params.materialId);
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material inválido." });
 
   documentUpload.single("file")(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
@@ -1791,7 +2010,7 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
         "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
         [materialId, id]
       );
-      if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+      if (!existing[0]) return res.status(404).json({ error: "Material não encontrado." });
 
       const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}`);
       await query("UPDATE materiais SET pdf_path = ? WHERE id = ? AND id_obra = ?", [publicPath, materialId, id]);
@@ -1811,8 +2030,8 @@ app.post("/api/works/:id/materials/item/:materialId/upload", requireAuth, async 
 app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const materialId = Number(req.params.materialId);
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
-  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material invalido." });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
+  if (!Number.isInteger(materialId) || materialId <= 0) return res.status(400).json({ error: "Material inválido." });
 
   documentUpload.single("file")(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do comprovativo." });
@@ -1823,7 +2042,7 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
         "SELECT id, nome_material FROM materiais WHERE id = ? AND id_obra = ? LIMIT 1",
         [materialId, id]
       );
-      if (!existing[0]) return res.status(404).json({ error: "Material nao encontrado." });
+      if (!existing[0]) return res.status(404).json({ error: "Material não encontrado." });
 
       const publicPath = await uploadFile(req.file, `works/${id}/materials/${materialId}/invoices`);
       await query(
@@ -1845,13 +2064,13 @@ app.post("/api/works/:id/materials/item/:materialId/invoice-photo", requireAuth,
 
 app.post("/api/works/:id/final-attachment", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
   documentUpload.array("files", 20)(req, res, async (error) => {
     if (error) return res.status(400).json({ error: error.message || "Falha no upload do anexo." });
     if (!req.files?.length) return res.status(400).json({ error: "Seleciona pelo menos um PDF ou uma imagem." });
     try {
       const existing = await query("SELECT id, final_attachment_path, final_attachment_paths FROM obras WHERE id = ? LIMIT 1", [id]);
-      if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+      if (!existing[0]) return res.status(404).json({ error: "Obra não encontrada." });
       let storedPaths = [];
       try {
         const parsed = JSON.parse(existing[0].final_attachment_paths || "[]");
@@ -1896,14 +2115,14 @@ app.get("/api/clients", requireAuth, async (_req, res) => {
 app.get("/api/clients/:id", requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente inválido." });
     const rows = await query(
       `SELECT id, nome AS name, telefone AS phone, email,
               ${schemaInfo.clientesNifColumn ? `${schemaInfo.clientesNifColumn} AS nif,` : "NULL AS nif,"}
               ${schemaInfo.clientesAddressColumn ? `${schemaInfo.clientesAddressColumn} AS address,` : "NULL AS address,"}
               created_at FROM clientes WHERE id = ? LIMIT 1`, [id]
     );
-    if (!rows[0]) return res.status(404).json({ error: "Cliente nao encontrado." });
+    if (!rows[0]) return res.status(404).json({ error: "Cliente não encontrado." });
     return res.json({ ...rows[0], notes: null, works: await getWorks(null, "", id) });
   } catch (error) {
     return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao carregar cliente." });
@@ -1914,13 +2133,13 @@ app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const { name, phone, email, nif, address } = req.body || {};
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente invalido." });
-    if (!String(name || "").trim()) return res.status(400).json({ error: "O nome do cliente e obrigatorio." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente inválido." });
+    if (!String(name || "").trim()) return res.status(400).json({ error: "O nome do cliente é obrigatório." });
     const nifValue = String(nif || "").trim();
-    if (nifValue && !/^\d{9}$/.test(nifValue)) return res.status(400).json({ error: "NIF deve ter 9 digitos." });
+    if (nifValue && !/^\d{9}$/.test(nifValue)) return res.status(400).json({ error: "O NIF deve ter 9 dígitos." });
     if (nifValue && schemaInfo.clientesNifColumn) {
       const duplicate = await query(`SELECT id FROM clientes WHERE ${schemaInfo.clientesNifColumn} = ? AND id <> ? LIMIT 1`, [nifValue, id]);
-      if (duplicate[0]) return res.status(409).json({ error: "Ja existe um cliente com esse NIF." });
+      if (duplicate[0]) return res.status(409).json({ error: "Já existe um cliente com esse NIF." });
     }
     const assignments = ["nome = ?", "telefone = ?", "email = ?"];
     const values = [String(name).trim(), String(phone || "").trim() || null, String(email || "").trim() || null];
@@ -1928,7 +2147,7 @@ app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
     if (schemaInfo.clientesAddressColumn) { assignments.push(`${schemaInfo.clientesAddressColumn} = ?`); values.push(String(address || "").trim() || null); }
     values.push(id);
     const result = await query(`UPDATE clientes SET ${assignments.join(", ")} WHERE id = ?`, values);
-    if (!result.affectedRows) return res.status(404).json({ error: "Cliente nao encontrado." });
+    if (!result.affectedRows) return res.status(404).json({ error: "Cliente não encontrado." });
     await createAuditLog(req, "update_client", "client", id, null, { name: String(name).trim(), phone, email, nif: nifValue, address });
     return res.json({ ok: true });
   } catch (error) {
@@ -1939,9 +2158,9 @@ app.patch("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
 app.delete("/api/works/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     const existing = await query("SELECT nome_obra FROM obras WHERE id = ? LIMIT 1", [id]);
-    if (!existing[0]) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!existing[0]) return res.status(404).json({ error: "Obra não encontrada." });
     await createAuditLog(req, "delete_work", "work", id, null, { title: existing[0].nome_obra });
     await query("DELETE FROM obras WHERE id = ?", [id]);
     return res.json({ ok: true });
@@ -1953,9 +2172,9 @@ app.delete("/api/works/:id", requireAuth, requireAdmin, async (req, res) => {
 app.delete("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de cliente inválido." });
     const existing = await query("SELECT nome FROM clientes WHERE id = ? LIMIT 1", [id]);
-    if (!existing[0]) return res.status(404).json({ error: "Cliente nao encontrado." });
+    if (!existing[0]) return res.status(404).json({ error: "Cliente não encontrado." });
     const works = await query("SELECT id FROM obras WHERE id_cliente = ?", [id]);
     for (const work of works) await query("DELETE FROM obras WHERE id = ?", [work.id]);
     await query("DELETE FROM clientes WHERE id = ?", [id]);
@@ -1970,12 +2189,12 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { name, phone, email, nif, address } = req.body || {};
     if (!name || !String(name).trim()) {
-      return res.status(400).json({ error: "O nome do cliente e obrigatorio." });
+      return res.status(400).json({ error: "O nome do cliente é obrigatório." });
     }
     const nifValue = String(nif || "").trim();
     const addressValue = String(address || "").trim();
     if (nifValue && !/^\d{9}$/.test(nifValue)) {
-      return res.status(400).json({ error: "NIF deve ter 9 digitos." });
+      return res.status(400).json({ error: "O NIF deve ter 9 dígitos." });
     }
     if (nifValue && schemaInfo.clientesNifColumn) {
       const existingByNif = await query(
@@ -1983,7 +2202,7 @@ app.post("/api/clients", requireAuth, requireAdmin, async (req, res) => {
         [nifValue]
       );
       if (existingByNif[0]) {
-        return res.status(409).json({ error: "Ja existe um cliente com esse NIF." });
+        return res.status(409).json({ error: "Já existe um cliente com esse NIF." });
       }
     }
     const nextClientId = await getNextTableId("clientes");
@@ -2026,14 +2245,14 @@ app.post("/api/users", requireAuth, requireAdmin, async (req, res) => {
     const { username, password, role } = req.body || {};
     const roleValue = role === "admin" ? "admin" : "funcionario";
     if (!username || !String(username).trim()) {
-      return res.status(400).json({ error: "Username obrigatorio." });
+      return res.status(400).json({ error: "O username é obrigatório." });
     }
     if (!password || String(password).length < 6) {
       return res.status(400).json({ error: "Password deve ter pelo menos 6 caracteres." });
     }
     const usernameValue = String(username).trim();
     const existing = await query("SELECT id FROM funcionarios WHERE username = ? LIMIT 1", [usernameValue]);
-    if (existing[0]) return res.status(409).json({ error: "Username ja existe." });
+    if (existing[0]) return res.status(409).json({ error: "Esse username já existe." });
 
     const nextUserId = await getNextTableId("funcionarios");
     const passwordHash = bcrypt.hashSync(String(password), 12);
@@ -2069,13 +2288,13 @@ app.patch("/api/works/:id/priority", requireAuth, requireAdmin, async (req, res)
   try {
     const id = Number(req.params.id);
     const priority = normalizePriority(req.body?.priority);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     if (!schemaInfo.obrasPriorityColumn) {
-      return res.status(500).json({ error: "Coluna de prioridade nao encontrada." });
+      return res.status(500).json({ error: "Coluna de prioridade não encontrada." });
     }
 
     const result = await query(`UPDATE obras SET ${schemaInfo.obrasPriorityColumn} = ? WHERE id = ?`, [priority, id]);
-    if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!result.affectedRows) return res.status(404).json({ error: "Obra não encontrada." });
 
     const work = await getWorkById(id);
     await createAuditLog(req, "update_work_priority", "work", id, id, { priority });
@@ -2095,16 +2314,16 @@ app.patch("/api/works/:id/observations", requireAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const observations = String(req.body?.observations || "").trim() || null;
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra invalido." });
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID de obra inválido." });
     if (!schemaInfo.obrasObservationsColumn) {
-      return res.status(500).json({ error: "Coluna de observacoes nao encontrada." });
+      return res.status(500).json({ error: "Coluna de observações não encontrada." });
     }
 
     const result = await query(
       `UPDATE obras SET ${schemaInfo.obrasObservationsColumn} = ? WHERE id = ?`,
       [observations, id]
     );
-    if (!result.affectedRows) return res.status(404).json({ error: "Obra nao encontrada." });
+    if (!result.affectedRows) return res.status(404).json({ error: "Obra não encontrada." });
 
     const work = await getWorkById(id);
     await createAuditLog(req, "update_work_observations", "work", id, id, {
@@ -2112,7 +2331,7 @@ app.patch("/api/works/:id/observations", requireAuth, async (req, res) => {
     });
     return res.json(work || null);
   } catch (error) {
-    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar observacoes." });
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao atualizar observações." });
   }
 });
 
@@ -2131,20 +2350,20 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) {
-      return res.status(400).json({ error: "ID de utilizador invalido." });
+      return res.status(400).json({ error: "ID de utilizador inválido." });
     }
     if (id === Number(req.user?.id)) {
-      return res.status(400).json({ error: "Nao podes eliminar o teu proprio utilizador." });
+      return res.status(400).json({ error: "Não podes eliminar o teu próprio utilizador." });
     }
 
     const existing = await query("SELECT id, username, role FROM funcionarios WHERE id = ? LIMIT 1", [id]);
     if (!existing[0]) {
-      return res.status(404).json({ error: "Utilizador nao encontrado." });
+      return res.status(404).json({ error: "Utilizador não encontrado." });
     }
 
     const result = await query("DELETE FROM funcionarios WHERE id = ?", [id]);
     if (!result.affectedRows) {
-      return res.status(404).json({ error: "Utilizador nao encontrado." });
+      return res.status(404).json({ error: "Utilizador não encontrado." });
     }
     await createAuditLog(req, "delete_user", "user", id, null, {
       deleted_user_id: id,
@@ -2166,11 +2385,11 @@ app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
 function validateRuntimeConfig() {
   const dbPort = Number(process.env.DB_PORT || 5432);
   if (!Number.isInteger(normalizedPort) || normalizedPort <= 0 || normalizedPort > 65535) {
-    throw new Error(`PORT invalido: ${port}. Usa um porto entre 1 e 65535.`);
+    throw new Error(`PORT inválido: ${port}. Usa um porto entre 1 e 65535.`);
   }
   if (normalizedPort === dbPort) {
     throw new Error(
-      `PORT (${normalizedPort}) nao pode ser igual ao DB_PORT (${dbPort}). ` +
+      `PORT (${normalizedPort}) não pode ser igual ao DB_PORT (${dbPort}). ` +
       "Define PORT=3000 para a app e usa a porta PostgreSQL indicada pelo Supabase."
     );
   }
@@ -2179,10 +2398,10 @@ function validateRuntimeConfig() {
 async function start() {
   try {
     if (!jwtSecret) {
-      throw new Error("JWT_SECRET obrigatorio no ambiente.");
+      throw new Error("JWT_SECRET obrigatório no ambiente.");
     }
     if (isProd && jwtSecret.length < 32) {
-      throw new Error("JWT_SECRET demasiado curto para producao (minimo 32 caracteres).");
+      throw new Error("JWT_SECRET demasiado curto para produção (mínimo 32 caracteres).");
     }
     validateRuntimeConfig();
 
@@ -2190,6 +2409,7 @@ async function start() {
     await initChat(query);
     await ensureInitialAdmin();
     await ensureProcessStepsTable();
+    await ensureCalendarEventsTable();
     await ensureAuditLogsTable();
     await ensureWorksPriorityColumn();
     await initNotifications(query);

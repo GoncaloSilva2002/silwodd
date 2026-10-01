@@ -29,18 +29,18 @@ function createPushRouter(query, requireAuth) {
   router.use(requireAuth);
 
   router.get("/public-key", (_req, res) => {
-    if (!enabled) return res.status(503).json({ error: "Notificacoes push nao configuradas no servidor." });
+    if (!enabled) return res.status(503).json({ error: "Notificações push não configuradas no servidor." });
     return res.json({ publicKey: vapidPublicKey });
   });
 
   router.post("/subscribe", async (req, res) => {
     try {
-      if (!enabled) return res.status(503).json({ error: "Notificacoes push nao configuradas no servidor." });
+      if (!enabled) return res.status(503).json({ error: "Notificações push não configuradas no servidor." });
       const subscription = req.body || {};
       const endpoint = String(subscription.endpoint || "").trim();
       const p256dh = String(subscription.keys?.p256dh || "").trim();
       const auth = String(subscription.keys?.auth || "").trim();
-      if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: "Subscricao push invalida." });
+      if (!endpoint || !p256dh || !auth) return res.status(400).json({ error: "Subscrição push inválida." });
       await query(`
         INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
         VALUES (?, ?, ?, ?)
@@ -48,7 +48,7 @@ function createPushRouter(query, requireAuth) {
       `, [req.user.id, endpoint, p256dh, auth]);
       return res.status(201).json({ ok: true });
     } catch (error) {
-      return res.status(500).json({ error: error?.message || "Nao foi possivel guardar a subscricao push." });
+      return res.status(500).json({ error: error?.message || "Não foi possível guardar a subscrição push." });
     }
   });
 
