@@ -2465,6 +2465,7 @@ app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", 
 app.get(["/login", "/login/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));
 app.get(["/app", "/app/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "app.html")));
 app.get(["/acompanhar", "/acompanhar/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "acompanhar.html")));
+app.get(["/empresa.html", "/empresa", "/empresa/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "empresa.html")));
 app.get("/health", (_req, res) => res.status(200).json({ status: "ok" }));
 
 function validateRuntimeConfig() {
