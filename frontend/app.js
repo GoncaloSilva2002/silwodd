@@ -678,6 +678,21 @@ function updateProcessItemFromWork(processItem, work) {
     doneButton.setAttribute("aria-label", done ? "Etapa feita" : "Marcar etapa como feita");
   }
 
+  const checkMeta = formatProcessCheckMeta(step);
+  const currentCheckMeta = processItem.querySelector(".process-check-meta");
+  if (checkMeta) {
+    if (currentCheckMeta) {
+      currentCheckMeta.textContent = checkMeta;
+    } else if (doneButton) {
+      const meta = document.createElement("p");
+      meta.className = "muted process-check-meta";
+      meta.textContent = checkMeta;
+      doneButton.insertAdjacentElement("afterend", meta);
+    }
+  } else {
+    currentCheckMeta?.remove();
+  }
+
   if (step.can_upload_pdf) {
     const linksWrapper = processItem.querySelector(".process-pdf-links");
     if (linksWrapper) {
@@ -692,6 +707,29 @@ function updateProcessItemFromWork(processItem, work) {
 
 function updateWorkCardFromWork(workItem, work) {
   if (!workItem || !work) return;
+
+  const processSteps = getWorkProcessSteps(work);
+  const completedSteps = processSteps.filter((step) => step.done).length;
+  const progressPercent = processSteps.length
+    ? Math.round((completedSteps / processSteps.length) * 100)
+    : 0;
+
+  const progressLabel = workItem.querySelector(".work-progress-label");
+  if (progressLabel) {
+    progressLabel.textContent = `${completedSteps} de ${processSteps.length} etapas`;
+  }
+
+  const progressBar = workItem.querySelector(".work-progress");
+  if (progressBar) {
+    progressBar.setAttribute("aria-label", `Progresso: ${progressPercent}%`);
+    const progressValue = progressBar.querySelector(".work-progress-value");
+    if (progressValue) progressValue.style.width = `${progressPercent}%`;
+  }
+
+  const overviewProgress = workItem.querySelector(".work-overview-progress");
+  if (overviewProgress) {
+    overviewProgress.textContent = `${completedSteps}/${processSteps.length} etapas`;
+  }
 
   const meta = workItem.querySelector(".work-summary-meta");
   if (meta) {
@@ -899,7 +937,7 @@ function renderWorks(items, target) {
           </div>
           <div class="work-overview">
             <div><span class="work-overview-label">Prazo</span><strong>${escapeHtml(formatDateOnly(w.due_date))}</strong></div>
-            <div><span class="work-overview-label">Progresso</span><strong>${completedSteps}/${processSteps.length} etapas</strong></div>
+            <div><span class="work-overview-label">Progresso</span><strong class="work-overview-progress">${completedSteps}/${processSteps.length} etapas</strong></div>
           </div>
           ${user.role === "admin" ? `
           <div class="public-link-box">
@@ -2142,7 +2180,6 @@ async function handleProcessCheckboxChange(event) {
     updateProcessItemFromWork(processItem, updatedWork);
     updateWorkCardFromWork(workItem, updatedWork);
     applyProcessSequenceUI(workItem);
-    await refreshWorksView({ workId, detailTab: "process" });
     await loadLogs();
   } catch (error) {
     toggleButton.classList.toggle("done", previousValue);
