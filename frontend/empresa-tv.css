@@ -24,6 +24,8 @@ button { color: inherit; font: inherit; }
 .tv-card { display: flex; flex: 1 1 0; min-height: 0; flex-direction: column; justify-content: center; overflow: hidden; padding: 14px 28px; border-radius: 10px; }
 .tv-card h2 { margin: 0; font-size: 36px; line-height: 1.1; text-transform: capitalize; overflow-wrap: anywhere; }
 .tv-card p { margin: 8px 0 0; font-size: 48px; line-height: 1.15; font-weight: 700; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.tv-empty { border: 1px solid var(--tv-border); background: var(--tv-panel); color: var(--tv-muted); }
+.tv-empty p { font-weight: 400; }
 .tv-ok { background: #16a34a; }
 .tv-aviso { background: #eab308; color: #111827; }
 .tv-problema { background: #dc2626; }
@@ -109,7 +111,12 @@ button.cal-day { cursor: pointer; }
   .tv-navigation button, .tv-calendar-toolbar button, .cal-dialog button { min-height: 44px; min-width: 44px; }
   .tv-calendar-toolbar { flex-wrap: wrap; }
   .tv-calendar-root { flex: none; overflow: auto; }
-  .tv-calendar-root > .cal-grid { min-width: 560px; height: auto; grid-template-rows: 25px repeat(6, minmax(96px, auto)); }
+  .tv-calendar-root { width: 100%; overflow-x: hidden; }
+  .tv-calendar-root > .cal-grid { min-width: 0; width: 100%; height: auto; gap: 2px; grid-template-rows: 22px repeat(6, minmax(62px, auto)); }
+  .tv-calendar-root > .cal-grid .cal-day { padding: 3px; overflow: hidden; }
+  .tv-calendar-root > .cal-grid .cal-day > span { font-size: 12px; }
+  .tv-calendar-root > .cal-grid .cal-event { max-height: 30px; padding: 2px 3px; overflow: hidden; font-size: 9px; line-height: 1.1; }
+  .tv-calendar-root > .cal-grid .cal-event small { display: none; }
   .cal-weeks { height: auto; grid-template-columns: 1fr; }
   .cal-week-events { overflow: visible; }
   .cal-year { height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); }

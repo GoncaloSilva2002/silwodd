@@ -74,7 +74,12 @@ button.cal-day { cursor: pointer; }
   .calendar-header-actions { justify-content: flex-start; }
   .calendar-toolbar { flex-wrap: wrap; }
   .calendar-toolbar strong { font-size: 18px; }
-  .calendar-root { margin-inline: -4px; }
+  .calendar-root { margin-inline: -4px; overflow-x: hidden; }
+  .calendar-root > .cal-grid { min-width: 0; width: 100%; gap: 2px; grid-template-rows: 22px repeat(6, minmax(62px, auto)); }
+  .calendar-root > .cal-grid .cal-day { padding: 3px; overflow: hidden; }
+  .calendar-root > .cal-grid .cal-day > span { font-size: 12px; }
+  .calendar-root > .cal-grid .cal-event { max-height: 30px; padding: 2px 3px; overflow: hidden; font-size: 9px; line-height: 1.1; }
+  .calendar-root > .cal-grid .cal-event small { display: none; }
   .cal-weeks { grid-template-columns: 1fr; }
   .cal-year { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .calendar-editor-fields { grid-template-columns: 1fr; }

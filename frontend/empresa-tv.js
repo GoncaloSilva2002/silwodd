@@ -94,12 +94,10 @@
 
     stageDays.forEach((day, index) => {
       const items = grouped.get(index) || [];
-      if (!items.length) return;
       const card = document.createElement("article");
-      card.className = `tv-card ${eventState(items)}`;
+      card.className = `tv-card ${items.length ? eventState(items) : "tv-empty"}`;
       const names = items.map((event) => `${event.titulo}${event.notas ? ` - (${event.notas})` : ""}`).join("\n");
-      card.innerHTML = `<h2>${day.label}</h2><p>${Calendario.esc(names)}</p>`;
-      card.querySelector("p").innerHTML = Calendario.esc(names).replace(/\n/g, "<br>");
+      card.innerHTML = `<h2>${day.label}</h2><p>${items.length ? Calendario.esc(names).replace(/\n/g, "<br>") : "Sem serviço"}</p>`;
       columns[index < 3 ? 0 : 1].appendChild(card);
     });
     slide.classList.toggle("tv-planned-visible", stageSlides.indexOf(slide) < 6 || grouped.size > 0);
