@@ -271,5 +271,7 @@
     if (!loaded) loadCalendar();
   });
 
+  window.refreshCalendar = loadCalendar;
+
   if (document.getElementById("tab-calendario")?.classList.contains("active")) loadCalendar();
 })();

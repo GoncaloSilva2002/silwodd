@@ -24,10 +24,12 @@ const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
 const nodeEnv = process.env.NODE_ENV || "development";
 const uploadsDir = path.join(__dirname, "uploads");
 const isProd = nodeEnv === "production";
-const allowedOrigins = String(process.env.ALLOWED_ORIGINS || "")
+const configuredOrigins = String(process.env.ALLOWED_ORIGINS || "")
   .split(",")
-  .map((origin) => origin.trim())
+  .map((origin) => origin.trim().replace(/\/$/, ""))
   .filter(Boolean);
+const renderExternalUrl = String(process.env.RENDER_EXTERNAL_URL || "").trim().replace(/\/$/, "");
+const allowedOrigins = [...new Set([...configuredOrigins, ...(renderExternalUrl ? [renderExternalUrl] : [])])];
 
 const materialMap = {
   stone: "Pedra",
@@ -503,6 +505,7 @@ function normalizeCalendarEventPayload(body = {}) {
 function serializeCalendarEvent(row) {
   return {
     id: row.id,
+    work_id: row.work_id || null,
     titulo: row.titulo,
     data: String(row.data || "").slice(0, 10),
     data_fim: row.data_fim ? String(row.data_fim).slice(0, 10) : "",
@@ -513,6 +516,35 @@ function serializeCalendarEvent(row) {
     estado: row.estado || "ok",
     notas: row.notas || ""
   };
+}
+
+async function createWorkDeadlineCalendarEvent(req, workId, title, dueDate) {
+  const rows = await query(
+    `INSERT INTO calendar_events (titulo, data, data_fim, categoria, etapa, tipo, estado, notas, work_id, created_by_user_id, created_by_username)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas, work_id`,
+    [
+      String(title).trim(),
+      dueDate,
+      null,
+      "normal",
+      "obra",
+      "obra",
+      "ok",
+      "Prazo automático da obra.",
+      workId,
+      req.user?.id || null,
+      req.user?.username || null
+    ]
+  );
+  if (rows[0]) {
+    await createAuditLog(req, "create_calendar_event", "calendar_event", rows[0].id, workId, {
+      automatic: true,
+      work_id: workId,
+      due_date: dueDate
+    });
+  }
+  return rows[0] || null;
 }
 
 function getProcessStepKeyByName(stepName) {
@@ -650,15 +682,18 @@ async function ensureCalendarEventsTable() {
       tipo VARCHAR(80) NULL,
       estado VARCHAR(20) NOT NULL DEFAULT 'ok',
       notas VARCHAR(500) NULL,
+      work_id BIGINT NULL REFERENCES obras(id) ON DELETE CASCADE,
       created_by_user_id BIGINT NULL,
       created_by_username VARCHAR(120) NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  await query("ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS work_id BIGINT REFERENCES obras(id) ON DELETE CASCADE");
   await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_date ON calendar_events(data)");
   await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_end_date ON calendar_events(data_fim)");
   await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_stage ON calendar_events(etapa)");
+  await query("CREATE INDEX IF NOT EXISTS idx_calendar_events_work_id ON calendar_events(work_id)");
 
   const countRows = await query("SELECT COUNT(*) AS total FROM calendar_events");
   if (Number(countRows[0]?.total || 0) > 0) return;
@@ -1266,7 +1301,7 @@ app.get("/api/calendar/events", requireAuth, async (req, res) => {
       params.push(to);
     }
     const rows = await query(
-      `SELECT id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas
+      `SELECT id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas, work_id
        FROM calendar_events
        ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
        ORDER BY data ASC, id ASC`,
@@ -1285,7 +1320,7 @@ app.post("/api/calendar/events", requireAuth, requireAdmin, async (req, res) => 
     const rows = await query(
       `INSERT INTO calendar_events (titulo, data, data_fim, categoria, etapa, tipo, estado, notas, created_by_user_id, created_by_username)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas`,
+       RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas, work_id`,
       [
         normalized.value.titulo,
         normalized.value.data,
@@ -1316,7 +1351,7 @@ app.patch("/api/calendar/events/:id", requireAuth, requireAdmin, async (req, res
       `UPDATE calendar_events
        SET titulo = ?, data = ?, data_fim = ?, categoria = ?, etapa = ?, tipo = ?, estado = ?, notas = ?, updated_at = CURRENT_TIMESTAMP
        WHERE id = ?
-       RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas`,
+       RETURNING id, titulo, data, data_fim, categoria, etapa, tipo, estado, notas, work_id`,
       [
         normalized.value.titulo,
         normalized.value.data,
@@ -1363,12 +1398,16 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
       parent_work_id: parentWorkIdInput
     } = req.body || {};
     const allowed = ["pending", "in_progress", "done", "suspended"];
+    const normalizedDueDate = String(dueDate || "").trim() || null;
 
     if (!title || !String(title).trim()) {
       return res.status(400).json({ error: "O título da obra é obrigatório." });
     }
     if (status && !allowed.includes(status)) {
       return res.status(400).json({ error: "Estado de obra inválido." });
+    }
+    if (normalizedDueDate && !isCalendarDate(normalizedDueDate)) {
+      return res.status(400).json({ error: "A data de fim da obra é inválida." });
     }
 
     const priorityValue = normalizePriority(priority);
@@ -1423,7 +1462,7 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
     }
     if (schemaInfo.obrasDueDateColumn) {
       baseColumns.push(schemaInfo.obrasDueDateColumn);
-      baseValues.push(dueDate || null);
+      baseValues.push(normalizedDueDate);
     }
     const placeholders = baseColumns.map(() => "?").join(", ");
     const result = await query(
@@ -1439,6 +1478,14 @@ app.post("/api/works", requireAuth, requireAdmin, async (req, res) => {
       );
     }
     await ensureDefaultMaterialsForWork(nextWorkId);
+
+    if (normalizedDueDate) {
+      try {
+        await createWorkDeadlineCalendarEvent(req, nextWorkId, title, normalizedDueDate);
+      } catch (calendarError) {
+        console.error("Erro ao criar o prazo da obra no calendário:", calendarError.message);
+      }
+    }
 
     const work = await getWorkById(nextWorkId);
     await createAuditLog(req, "create_work", "work", nextWorkId, nextWorkId, {
@@ -2375,6 +2422,8 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, async (req, res) => {
     return res.status(500).json({ error: "Erro ao eliminar utilizador." });
   }
 });
+
+app.use("/api", (_req, res) => res.status(404).json({ error: "Rota da API não encontrada." }));
 
 app.get("/", (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));
 app.get(["/login", "/login/"], (_req, res) => res.sendFile(path.join(__dirname, "..", "frontend", "login.html")));

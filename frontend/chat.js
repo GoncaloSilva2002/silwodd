@@ -30,7 +30,7 @@
         download.addEventListener("click", async () => {
           download.disabled = true;
           try {
-            const response = await fetch(`/api/chat/conversations/${m.conversation_id}/attachments/${m.id}`, { headers: { Authorization: `Bearer ${token}` } });
+            const response = await fetch(window.apiUrl(`/api/chat/conversations/${m.conversation_id}/attachments/${m.id}`), { headers: { Authorization: `Bearer ${token}` } });
             if (!response.ok) throw new Error("Não foi possível descarregar o anexo. Verifica a sessão e tenta novamente.");
             const url = URL.createObjectURL(await response.blob());
             const link = document.createElement("a");

@@ -287,7 +287,7 @@ async function api(path, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(path, {
+  const res = await fetch(window.apiUrl(path), {
     ...options,
     headers
   });
@@ -299,7 +299,16 @@ async function api(path, options = {}) {
     return null;
   }
 
-  const data = await res.json();
+  const responseText = await res.text();
+  let data = {};
+  try {
+    data = responseText ? JSON.parse(responseText) : {};
+  } catch (_error) {
+    if (res.status === 404) {
+      throw new Error("A rota da API não foi encontrada. Reinicia o backend desta aplicação.");
+    }
+    throw new Error("O servidor devolveu uma resposta inválida. Confirma se o backend correto está a correr.");
+  }
   if (!res.ok) {
     throw new Error(data.error || "Erro no pedido.");
   }
@@ -1497,6 +1506,7 @@ workForm.addEventListener("submit", async (event) => {
     if (workParentSelect) workParentSelect.value = "";
     if (workParentInput) workParentInput.value = "";
     await loadData();
+    if (typeof window.refreshCalendar === "function") await window.refreshCalendar();
     setActiveTab("works");
   } catch (error) {
     window.alert(error.message);

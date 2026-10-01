@@ -32,7 +32,7 @@ async function loadTracking() {
   }
 
   try {
-    const response = await fetch(`/api/public/works/${encodeURIComponent(token)}`);
+    const response = await fetch(window.apiUrl(`/api/public/works/${encodeURIComponent(token)}`));
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Não foi possível abrir este acompanhamento.");
     const percent = data.total_steps ? Math.round((data.completed_steps / data.total_steps) * 100) : 0;
