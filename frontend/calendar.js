@@ -1,8 +1,9 @@
 /* Renderização do calendário sem conversões de fuso horário. */
 window.Calendario = (() => {
-  const tipos = { obra: "Fim de obra", camiao: "Carregar camião" };
+  const tipos = { obra: "Fim de obra", inicio_obra: "Início de obra", camiao: "Carregar camião" };
   const etapas = {
     obra: "Fim de obra",
+    inicio_obra: "Início de obra",
     camiao: "Carregar camião",
     corte: "Corte",
     orlar: "Orlar",
