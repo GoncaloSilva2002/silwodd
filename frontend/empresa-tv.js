@@ -106,13 +106,19 @@
     const columns = [slide.querySelector('[data-column="1"]'), slide.querySelector('[data-column="2"]')];
     columns.forEach((column) => { column.innerHTML = ""; });
     const from = startOfWeek();
+    const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6, 12);
     const grouped = new Map();
     currentWeekEvents(stage).forEach((event) => {
-      const date = Calendario.date(event.data);
-      const dayIndex = (date.getDay() + 6) % 7;
-      if (dayIndex > 5) return;
-      if (!grouped.has(dayIndex)) grouped.set(dayIndex, []);
-      grouped.get(dayIndex).push(event);
+      const eventStart = Calendario.date(event.data);
+      const eventEnd = event.data_fim ? Calendario.date(event.data_fim) : eventStart;
+      const firstDay = eventStart < from ? from : eventStart;
+      const lastDay = eventEnd > to ? to : eventEnd;
+      for (let day = firstDay; day <= lastDay; day = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1, 12)) {
+        const dayIndex = (day.getDay() + 6) % 7;
+        if (dayIndex > 5) continue;
+        if (!grouped.has(dayIndex)) grouped.set(dayIndex, []);
+        grouped.get(dayIndex).push(event);
+      }
     });
 
     stageDays.forEach((day, index) => {

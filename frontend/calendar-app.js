@@ -116,7 +116,7 @@
   function setEditorMode() {
     const special = dayKind?.value === "especial";
     if (stage) stage.disabled = special;
-    if (endDate) endDate.disabled = !special;
+    if (endDate) endDate.disabled = false;
     if (special && title && !title.value.trim()) title.value = "Férias / Feriado / Ponte";
   }
 
@@ -172,7 +172,7 @@
     const payload = {
       titulo: title.value.trim(),
       data: date.value,
-      data_fim: special ? (endDate.value || null) : null,
+      data_fim: endDate.value || null,
       categoria: special ? "especial" : "normal",
       etapa: special ? "especial" : stage.value,
       tipo: special ? "" : stage.value,

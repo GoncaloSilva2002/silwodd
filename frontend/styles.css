@@ -463,6 +463,12 @@ button:active {
   box-shadow: 0 2px 10px rgba(27, 27, 24, 0.04);
 }
 
+.zone-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
 .work-group-container > .work-summary-btn .work-summary-side,
 .work-group-container > .work-details > .final-attachment-preview,
 .work-group-container > .work-details > .work-config-row,

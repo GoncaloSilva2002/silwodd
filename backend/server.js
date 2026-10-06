@@ -2252,6 +2252,31 @@ app.delete("/api/works/:id", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+app.delete("/api/works/:id/zone", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: "ID da zona/móvel inválido." });
+
+    const existing = await query(
+      "SELECT nome_obra, id_obra_principal FROM obras WHERE id = ? LIMIT 1",
+      [id]
+    );
+    if (!existing[0]) return res.status(404).json({ error: "Zona/móvel não encontrado." });
+    if (!existing[0].id_obra_principal) {
+      return res.status(400).json({ error: "Só é possível eliminar zonas/móveis associados a uma obra principal." });
+    }
+
+    await createAuditLog(req, "delete_work_zone", "work", id, existing[0].id_obra_principal, {
+      title: existing[0].nome_obra,
+      parent_work_id: existing[0].id_obra_principal
+    });
+    await query("DELETE FROM obras WHERE id = ?", [id]);
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar zona/móvel." });
+  }
+});
+
 app.delete("/api/clients/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const id = Number(req.params.id);

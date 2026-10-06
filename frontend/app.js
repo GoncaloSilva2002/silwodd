@@ -260,6 +260,7 @@ function getSuccessMessage(path, method) {
   if (verb === "DELETE" && /^\/api\/clients\/\d+$/.test(path)) return "Cliente eliminado com sucesso.";
   if (verb === "POST" && path === "/api/works") return "Obra criada com sucesso.";
   if (verb === "DELETE" && /^\/api\/works\/\d+$/.test(path)) return "Obra eliminada com sucesso.";
+  if (verb === "DELETE" && /\/api\/works\/\d+\/zone$/.test(path)) return "Zona/móvel eliminado com sucesso.";
   if (path.includes("/materials/") && verb === "DELETE") return "Material eliminado com sucesso.";
   if (path.endsWith("/materials") && verb === "POST") return "Material adicionado com sucesso.";
   if (path.includes("/materials/") && verb === "POST") return "Anexo do material guardado com sucesso.";
@@ -830,6 +831,7 @@ function formatLogAction(actionType) {
     create_public_link: "Criou link de acompanhamento",
     revoke_public_link: "Revogou link de acompanhamento",
     delete_material: "Eliminou material",
+    delete_work_zone: "Eliminou zona/móvel",
     create_process_step: "Adicionou etapa",
     reorder_process_steps: "Moveu etapas",
     delete_process_step: "Eliminou etapa",
@@ -894,7 +896,8 @@ function formatLogDetails(details) {
     .join(" | ");
 }
 
-function renderWorks(items, target) {
+function renderWorks(items, target, options = {}) {
+  const isZone = options.isZone === true;
   if (!items.length) {
     target.innerHTML = "<div class='empty-state'><strong>Sem obras neste estado</strong><span>Experimenta outro filtro ou adiciona uma nova obra.</span></div>";
     return;
@@ -972,6 +975,7 @@ function renderWorks(items, target) {
           </div>
           ` : ""}
           ${w.description ? `<p class="work-description">${escapeHtml(w.description)}</p>` : ""}
+          ${isZone && user.role === "admin" ? `<div class="zone-actions"><button type="button" class="danger-btn delete-zone-btn">Eliminar zona/móvel</button></div>` : ""}
           ${visibleGroups.length ? `<div class="work-zones-list"></div>` : ""}
           ${isGroupContainer ? "" : `
           <div class="detail-tabs">
@@ -1023,7 +1027,7 @@ function renderWorks(items, target) {
     const visibleZones = worksFilterStatus
       ? work.groups.filter((group) => group.status === worksFilterStatus)
       : work.groups;
-    renderWorks(visibleZones, zonesContainer);
+    renderWorks(visibleZones, zonesContainer, { isZone: true });
   });
 }
 
@@ -1803,6 +1807,27 @@ async function handleWorksInteraction(event) {
   if (!button) return;
 
   const workItem = button.closest(".work-item");
+  if (button.classList.contains("delete-zone-btn")) {
+    if (user.role !== "admin" || !workItem) return;
+    const workId = workItem.dataset.workId;
+    const zoneTitle = workItem.querySelector(".work-summary-title")?.textContent?.trim() || "esta zona/móvel";
+    const parentWorkId = workItem.parentElement?.closest(".work-item")?.dataset.workId || "";
+    if (!workId) return;
+    if (!window.confirm(`Eliminar "${zoneTitle}"? Esta ação também elimina os dados associados.`)) return;
+
+    button.disabled = true;
+    try {
+      await api(`/api/works/${workId}/zone`, { method: "DELETE" });
+      if (parentWorkId) await refreshWorksView({ workId: parentWorkId });
+      else await loadWorksTab();
+      await loadLogs();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(error.message);
+    }
+    return;
+  }
+
   if (button.classList.contains("upload-final-attachment-btn")) {
     const input = workItem?.querySelector(".final-attachment-file");
     const cameraInput = workItem?.querySelector(".final-camera-file");
