@@ -25,6 +25,29 @@
     return Calendario.key(value);
   }
 
+  function canonicalStage(value) {
+    return String(value || "")
+      .trim()
+      .toLocaleLowerCase("pt-PT")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "");
+  }
+
+  function eventStage(event) {
+    const aliases = {
+      carregar: "camiao",
+      carregar_camiao: "camiao",
+      fim_de_obra: "obra",
+      inicio_de_obra: "inicio_obra"
+    };
+    return [event.etapa, event.tipo]
+      .map(canonicalStage)
+      .filter(Boolean)
+      .map((value) => aliases[value] || value)[0] || "";
+  }
+
   function startOfWeek(value = new Date()) {
     return new Date(value.getFullYear(), value.getMonth(), value.getDate() - ((value.getDay() + 6) % 7), 12);
   }
@@ -36,7 +59,7 @@
   function currentWeekEvents(stage) {
     const from = startOfWeek();
     const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6, 12);
-    return events.filter((event) => event.etapa === stage && eventOverlaps(event, from, to));
+    return events.filter((event) => eventStage(event) === stage && eventOverlaps(event, from, to));
   }
 
   function eventState(items) {
@@ -111,10 +134,14 @@
   }
 
   function renderAll() {
+    const currentSlide = document.querySelector(".tv-slide.active");
     stageSlides.forEach(renderStage);
     calendarSlides.forEach(renderCalendar);
     const available = activeSlides();
-    if (!available.includes(document.querySelector(".tv-slide.active"))) slideIndex = Math.min(slideIndex, available.length - 1);
+    const currentSlideIndex = currentSlide ? available.indexOf(currentSlide) : -1;
+    slideIndex = currentSlideIndex >= 0
+      ? currentSlideIndex
+      : Math.min(slideIndex, available.length - 1);
     showSlide(slideIndex);
     scheduleFit();
   }
