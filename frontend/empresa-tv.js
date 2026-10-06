@@ -100,7 +100,7 @@
       card.innerHTML = `<h2>${day.label}</h2><p>${items.length ? Calendario.esc(names).replace(/\n/g, "<br>") : "Sem serviço"}</p>`;
       columns[index < 3 ? 0 : 1].appendChild(card);
     });
-    slide.classList.toggle("tv-planned-visible", stageSlides.indexOf(slide) < 6 || grouped.size > 0);
+    slide.classList.toggle("tv-planned-visible", !slide.classList.contains("tv-conditional-slide") || grouped.size > 0);
   }
 
   function renderCalendar(slide) {
@@ -120,7 +120,18 @@
   }
 
   function activeSlides() {
-    return slides.filter((slide) => !slide.classList.contains("tv-conditional-slide") || slide.classList.contains("tv-planned-visible"));
+    const seen = new Set();
+    return slides.filter((slide) => {
+      if (slide.classList.contains("tv-conditional-slide") && !slide.classList.contains("tv-planned-visible")) return false;
+      const identity = slide.dataset.stage
+        ? `stage:${slide.dataset.stage}`
+        : slide.dataset.calendarView
+          ? `calendar:${slide.dataset.calendarView}`
+          : slide;
+      if (seen.has(identity)) return false;
+      seen.add(identity);
+      return true;
+    });
   }
 
   function showSlide(index) {
