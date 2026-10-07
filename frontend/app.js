@@ -840,6 +840,7 @@ function formatLogAction(actionType) {
     revoke_public_link: "Revogou link de acompanhamento",
     delete_material: "Eliminou material",
     delete_work_zone: "Eliminou zona/móvel",
+    delete_empty_work_parent: "Eliminou obra principal vazia",
     create_process_step: "Adicionou etapa",
     reorder_process_steps: "Moveu etapas",
     delete_process_step: "Eliminou etapa",
@@ -906,11 +907,21 @@ function formatLogDetails(details) {
 
 function renderWorks(items, target, options = {}) {
   const isZone = options.isZone === true;
-  if (!items.length) {
+  // Uma obra com zonas só pode aparecer no filtro se tiver pelo menos uma
+  // zona nesse estado. Isto evita mostrar o contentor vazio mesmo que uma
+  // resposta antiga do servidor ainda o inclua pelo estado da obra principal.
+  const visibleItems = !isZone && worksFilterStatus
+    ? items.filter((item) => {
+        if (!Array.isArray(item.groups) || item.groups.length === 0) return true;
+        return item.groups.some((group) => group.status === worksFilterStatus);
+      })
+    : items;
+
+  if (!visibleItems.length) {
     target.innerHTML = "<div class='empty-state'><strong>Sem obras neste estado</strong><span>Experimenta outro filtro ou adiciona uma nova obra.</span></div>";
     return;
   }
-  target.innerHTML = items
+  target.innerHTML = visibleItems
     .map(
       (w) => {
         const materials = getWorkMaterials(w);
@@ -1029,7 +1040,7 @@ function renderWorks(items, target, options = {}) {
     .join("");
 
   target.querySelectorAll(".work-item").forEach((workItem) => {
-    const work = items.find((item) => String(item.id) === String(workItem.dataset.workId));
+    const work = visibleItems.find((item) => String(item.id) === String(workItem.dataset.workId));
     const zonesContainer = workItem.querySelector(".work-zones-list");
     if (!zonesContainer || !work?.groups?.length) return;
     const visibleZones = worksFilterStatus

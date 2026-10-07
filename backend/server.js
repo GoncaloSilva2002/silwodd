@@ -811,6 +811,50 @@ async function createAuditLog(req, actionType, entityType, entityId = null, work
   }
 }
 
+async function deleteEmptyZoneParent(parentId, req, details = {}) {
+  const id = Number(parentId);
+  if (!Number.isInteger(id) || id <= 0) return false;
+
+  const remainingZones = await query(
+    "SELECT id FROM obras WHERE id_obra_principal = ? LIMIT 1",
+    [id]
+  );
+  if (remainingZones.length) return false;
+
+  const parent = await query(
+    "SELECT id, nome_obra FROM obras WHERE id = ? AND id_obra_principal IS NULL LIMIT 1",
+    [id]
+  );
+  if (!parent[0]) return false;
+
+  await createAuditLog(req, "delete_empty_work_parent", "work", id, id, {
+    title: parent[0].nome_obra,
+    ...details
+  });
+  await query("DELETE FROM obras WHERE id = ?", [id]);
+  return true;
+}
+
+async function cleanupEmptyZoneParents() {
+  const parents = await query(`
+    SELECT DISTINCT parent.id, parent.nome_obra
+    FROM obras parent
+    INNER JOIN audit_logs zone_log
+      ON zone_log.work_id = parent.id
+     AND zone_log.action_type = 'delete_work_zone'
+    WHERE parent.id_obra_principal IS NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM obras child
+        WHERE child.id_obra_principal = parent.id
+      )
+  `);
+
+  for (const parent of parents) {
+    await query("DELETE FROM obras WHERE id = ?", [parent.id]);
+  }
+}
+
 async function getAuditLogs(limit = 200, workSearch = "") {
   await ensureAuditLogsTable();
   const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
@@ -933,7 +977,25 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
   const whereClauses = [];
 
   // A lista geral mostra apenas obras principais; os grupos são carregados dentro delas.
-  if (!includeChildRows) whereClauses.push("o.id_obra_principal IS NULL");
+  if (!includeChildRows) {
+    whereClauses.push("o.id_obra_principal IS NULL");
+    // Uma obra principal usada como contentor deixa de ser uma obra visível
+    // quando a última zona foi eliminada. Mantemos o histórico da decisão de
+    // não apagar fisicamente o registo, mas não o devolvemos à aplicação.
+    whereClauses.push(`NOT (
+      NOT EXISTS (
+        SELECT 1
+        FROM obras child_work
+        WHERE child_work.id_obra_principal = o.id
+      )
+      AND EXISTS (
+        SELECT 1
+        FROM audit_logs empty_parent_log
+        WHERE empty_parent_log.work_id = o.id
+          AND empty_parent_log.action_type = 'delete_work_zone'
+      )
+    )`);
+  }
 
   if (Number.isInteger(workIdFilter) && workIdFilter > 0) {
     whereClauses.push("o.id = ?");
@@ -948,12 +1010,21 @@ async function getWorks(statusFilterCode = null, clientSearch = "", clientIdFilt
       params.push(estadoId);
     } else {
       whereClauses.push(`(
-        o.id_estado = ?
-        OR EXISTS (
-          SELECT 1
-          FROM obras child_work
-          WHERE child_work.id_obra_principal = o.id
-            AND child_work.id_estado = ?
+        (
+          EXISTS (
+            SELECT 1
+            FROM obras child_work
+            WHERE child_work.id_obra_principal = o.id
+              AND child_work.id_estado = ?
+          )
+        )
+        OR (
+          NOT EXISTS (
+            SELECT 1
+            FROM obras child_work
+            WHERE child_work.id_obra_principal = o.id
+          )
+          AND o.id_estado = ?
         )
       )`);
       params.push(estadoId, estadoId);
@@ -2272,7 +2343,11 @@ app.delete("/api/works/:id/zone", requireAuth, requireAdmin, async (req, res) =>
       parent_work_id: existing[0].id_obra_principal
     });
     await query("DELETE FROM obras WHERE id = ?", [id]);
-    return res.json({ ok: true });
+    const parentDeleted = await deleteEmptyZoneParent(existing[0].id_obra_principal, req, {
+      deleted_zone_id: id,
+      deleted_zone_title: existing[0].nome_obra
+    });
+    return res.json({ ok: true, parent_deleted: parentDeleted });
   } catch (error) {
     return res.status(500).json({ error: error?.sqlMessage || error?.message || "Erro ao eliminar zona/móvel." });
   }
@@ -2532,6 +2607,7 @@ async function start() {
     await ensureClientsAddressColumn();
     await ensureWorksProcessConfiguredColumn();
     await ensureWorksParentColumn();
+    await cleanupEmptyZoneParents();
     await ensureWorksPublicAccessColumns();
     await ensureWorksFinalAttachmentColumn();
     await ensureMaterialsExtraColumns();
