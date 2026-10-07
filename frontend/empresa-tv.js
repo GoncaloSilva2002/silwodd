@@ -148,6 +148,16 @@
     .map((view) => calendarSlidesByView.get(view))
     .filter(Boolean);
 
+  function getCurrentCalendarSlides() {
+    ensureCalendarSlides();
+    const byView = new Map();
+    document.querySelectorAll(".tv-calendar-slide").forEach((slide) => {
+      const view = slide.dataset.calendarView;
+      if (view && !byView.has(view)) byView.set(view, slide);
+    });
+    return calendarViewOrder.map((view) => byView.get(view)).filter(Boolean);
+  }
+
   function eventStage(event) {
     const candidates = [
       event.tipo,
@@ -264,7 +274,7 @@
     const currentSlide = document.querySelector(".tv-slide.active");
     visibleConditionalStages = new Set();
     stageSlidesForRendering.forEach(renderStage);
-    calendarSlidesForRendering.forEach(renderCalendar);
+    getCurrentCalendarSlides().forEach(renderCalendar);
     const available = getActiveSlides();
     const currentSlideIndex = currentSlide ? available.indexOf(currentSlide) : -1;
     slideIndex = currentSlideIndex >= 0
@@ -282,9 +292,7 @@
       .filter((stageKey) => visibleConditionalStages.has(stageKey))
       .map((stageKey) => stageSlidesByKey.get(stageKey))
       .filter(Boolean);
-    const calendarSlides = calendarViewOrder
-      .map((view) => calendarSlidesByView.get(view))
-      .filter(Boolean);
+    const calendarSlides = getCurrentCalendarSlides();
 
     return [...fixedSlides, ...conditionalSlides, ...calendarSlides];
   }
