@@ -1,4 +1,57 @@
 (() => {
+  const calendarViewDefinitions = {
+    semanas: {
+      title: "Semanas do mês",
+      today: "Mês atual",
+      previous: "Mês anterior",
+      next: "Mês seguinte"
+    },
+    mes: {
+      title: "Calendário mensal",
+      today: "Mês atual",
+      previous: "Mês anterior",
+      next: "Mês seguinte"
+    },
+    ano: {
+      title: "Calendário anual",
+      today: "Ano atual",
+      previous: "Ano anterior",
+      next: "Ano seguinte"
+    }
+  };
+
+  function ensureCalendarSlides() {
+    const root = document.getElementById("tv-slides");
+    if (!root) return;
+
+    const existingViews = new Set(
+      Array.from(root.querySelectorAll(".tv-calendar-slide"))
+        .map((slide) => slide.dataset.calendarView)
+        .filter(Boolean)
+    );
+
+    Object.entries(calendarViewDefinitions).forEach(([view, definition]) => {
+      if (existingViews.has(view)) return;
+      const slide = document.createElement("section");
+      slide.className = "tv-slide tv-calendar-slide";
+      slide.dataset.calendarView = view;
+      slide.innerHTML = `
+        <h1>${definition.title}</h1>
+        <div class="tv-calendar-toolbar">
+          <strong class="tv-calendar-period"></strong>
+          <div>
+            <button type="button" data-tv-step="-1" aria-label="${definition.previous}">←</button>
+            <button type="button" data-tv-step="today">${definition.today}</button>
+            <button type="button" data-tv-step="1" aria-label="${definition.next}">→</button>
+          </div>
+        </div>
+        <div class="tv-calendar-root"></div>`;
+      root.appendChild(slide);
+    });
+  }
+
+  ensureCalendarSlides();
+
   const slides = Array.from(document.querySelectorAll(".tv-slide"));
   const stageSlides = Array.from(document.querySelectorAll(".tv-stage-slide"));
   const calendarSlides = Array.from(document.querySelectorAll(".tv-calendar-slide"));
