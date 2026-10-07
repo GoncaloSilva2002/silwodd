@@ -1,5 +1,9 @@
-const token = localStorage.getItem("token");
-const user = JSON.parse(localStorage.getItem("user") || "{}");
+function getStoredAuthValue(key) {
+  return sessionStorage.getItem(key) || localStorage.getItem(key);
+}
+
+const token = getStoredAuthValue("token");
+const user = JSON.parse(getStoredAuthValue("user") || "{}");
 const toastContainer = document.getElementById("toast-container");
 
 if (!token) {
@@ -167,6 +171,8 @@ if (user.role !== "admin") {
 logoutBtn.addEventListener("click", () => {
   localStorage.removeItem("token");
   localStorage.removeItem("user");
+  sessionStorage.removeItem("token");
+  sessionStorage.removeItem("user");
   window.location.href = "/login.html";
 });
 
@@ -301,6 +307,8 @@ async function api(path, options = {}) {
   if (res.status === 401) {
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("user");
     window.location.href = "/login.html";
     return null;
   }

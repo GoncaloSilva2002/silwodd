@@ -46,6 +46,43 @@
         <h1>Fim de Obra</h1><div class="tv-content"><div class="tv-column" data-column="1"></div><div class="tv-column" data-column="2"></div></div>
       </section>
 
+      <section class="tv-slide tv-calendar-slide" data-calendar-view="semanas">
+        <h1>Semanas do mês</h1>
+        <div class="tv-calendar-toolbar">
+          <strong class="tv-calendar-period"></strong>
+          <div>
+            <button type="button" data-tv-step="-1" aria-label="Mês anterior">←</button>
+            <button type="button" data-tv-step="today">Mês atual</button>
+            <button type="button" data-tv-step="1" aria-label="Mês seguinte">→</button>
+          </div>
+        </div>
+        <div class="tv-calendar-root"></div>
+      </section>
+      <section class="tv-slide tv-calendar-slide" data-calendar-view="mes">
+        <h1>Calendário mensal</h1>
+        <div class="tv-calendar-toolbar">
+          <strong class="tv-calendar-period"></strong>
+          <div>
+            <button type="button" data-tv-step="-1" aria-label="Mês anterior">←</button>
+            <button type="button" data-tv-step="today">Mês atual</button>
+            <button type="button" data-tv-step="1" aria-label="Mês seguinte">→</button>
+          </div>
+        </div>
+        <div class="tv-calendar-root"></div>
+      </section>
+      <section class="tv-slide tv-calendar-slide" data-calendar-view="ano">
+        <h1>Calendário anual</h1>
+        <div class="tv-calendar-toolbar">
+          <strong class="tv-calendar-period"></strong>
+          <div>
+            <button type="button" data-tv-step="-1" aria-label="Ano anterior">←</button>
+            <button type="button" data-tv-step="today">Ano atual</button>
+            <button type="button" data-tv-step="1" aria-label="Ano seguinte">→</button>
+          </div>
+        </div>
+        <div class="tv-calendar-root"></div>
+      </section>
+
     </main>
 
     <p id="tv-error" class="tv-error" role="alert"></p>

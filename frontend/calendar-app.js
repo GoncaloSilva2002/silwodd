@@ -18,7 +18,8 @@
   const cancel = document.getElementById("event-cancel");
   const isAdmin = (() => {
     try {
-      return JSON.parse(localStorage.getItem("user") || "{}").role === "admin";
+      const storedUser = sessionStorage.getItem("user") || localStorage.getItem("user");
+      return JSON.parse(storedUser || "{}").role === "admin";
     } catch {
       return false;
     }

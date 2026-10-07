@@ -18,6 +18,7 @@
   const calendarDates = { semanas: new Date(), mes: new Date(), ano: new Date() };
   let events = [];
   let slideIndex = 0;
+  let visibleConditionalStages = new Set();
   let rotationPaused = mobileLayout.matches;
   let wakeLock = null;
 
@@ -35,17 +36,46 @@
       .replace(/^_|_$/g, "");
   }
 
+  const stageKeys = new Set(stageSlides.map((slide) => canonicalStage(slide.dataset.stage)).filter(Boolean));
+
   function eventStage(event) {
     const aliases = {
+      embalagem: "embalar",
+      embalamento: "embalar",
       carregar: "camiao",
       carregar_camiao: "camiao",
+      carregar_o_camiao: "camiao",
+      carregar_caminhao: "camiao",
+      carregar_o_caminhao: "camiao",
+      camiao: "camiao",
       fim_de_obra: "obra",
-      inicio_de_obra: "inicio_obra"
+      fim_da_obra: "obra",
+      fim_de_montagem: "obra",
+      fim_de_montagem_em_obra: "obra",
+      fim_de_montagem_na_obra: "obra",
+      inicio: "inicio_obra",
+      inicio_de_obra: "inicio_obra",
+      inicio_da_obra: "inicio_obra",
+      inicio_de_montagem: "inicio_obra",
+      inicio_de_montagem_em_obra: "inicio_obra",
+      inicio_de_montagem_na_obra: "inicio_obra",
+      montagem_de_fabrica: "montagem_fabrica",
+      montagem_na_fabrica: "montagem_fabrica",
+      montagem_de_obra: "montagem_obra",
+      montagem_na_obra: "montagem_obra"
     };
-    return [event.etapa, event.tipo]
+    const candidates = [
+      event.tipo,
+      event.etapa,
+      event.stage,
+      event.stage_key,
+      event.etapa_key,
+      event.nome_etapa
+    ]
       .map(canonicalStage)
       .filter(Boolean)
-      .map((value) => aliases[value] || value)[0] || "";
+      .map((value) => aliases[value] || value);
+    return candidates.find((value) => stageKeys.has(value)) || candidates[0] || "";
   }
 
   function startOfWeek(value = new Date()) {
@@ -59,7 +89,8 @@
   function currentWeekEvents(stage) {
     const from = startOfWeek();
     const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6, 12);
-    return events.filter((event) => eventStage(event) === stage && eventOverlaps(event, from, to));
+    const stageKey = canonicalStage(stage);
+    return events.filter((event) => eventStage(event) === stageKey && eventOverlaps(event, from, to));
   }
 
   function eventState(items) {
@@ -129,7 +160,12 @@
       card.innerHTML = `<h2>${day.label}</h2><p>${items.length ? Calendario.esc(names).replace(/\n/g, "<br>") : "Sem serviço"}</p>`;
       columns[index < 3 ? 0 : 1].appendChild(card);
     });
-    slide.classList.toggle("tv-planned-visible", !slide.classList.contains("tv-conditional-slide") || grouped.size > 0);
+    const stageKey = canonicalStage(stage);
+    const plannedVisible = !slide.classList.contains("tv-conditional-slide") || grouped.size > 0;
+    slide.classList.toggle("tv-planned-visible", plannedVisible);
+    if (slide.classList.contains("tv-conditional-slide") && plannedVisible) {
+      visibleConditionalStages.add(stageKey);
+    }
   }
 
   function renderCalendar(slide) {
@@ -141,6 +177,7 @@
 
   function renderAll() {
     const currentSlide = document.querySelector(".tv-slide.active");
+    visibleConditionalStages = new Set();
     stageSlides.forEach(renderStage);
     calendarSlides.forEach(renderCalendar);
     const available = activeSlides();
@@ -155,7 +192,8 @@
   function activeSlides() {
     const seen = new Set();
     return slides.filter((slide) => {
-      if (slide.classList.contains("tv-conditional-slide") && !slide.classList.contains("tv-planned-visible")) return false;
+      if (slide.classList.contains("tv-conditional-slide")
+        && !visibleConditionalStages.has(canonicalStage(slide.dataset.stage))) return false;
       const identity = slide.dataset.stage
         ? `stage:${slide.dataset.stage}`
         : slide.dataset.calendarView
@@ -188,7 +226,7 @@
 
   async function loadEvents() {
     const displayToken = new URLSearchParams(window.location.search).get("token");
-    const loginToken = localStorage.getItem("token");
+    const loginToken = sessionStorage.getItem("token") || localStorage.getItem("token");
     const endpoint = displayToken
       ? window.apiUrl(`/api/public/calendar/events?token=${encodeURIComponent(displayToken)}`)
       : window.apiUrl("/api/calendar/events");

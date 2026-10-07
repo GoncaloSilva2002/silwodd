@@ -21,6 +21,7 @@ const port = process.env.PORT || 3000;
 const normalizedPort = Number(port);
 const jwtSecret = process.env.JWT_SECRET || "";
 const jwtExpiresIn = process.env.JWT_EXPIRES_IN || "8h";
+const jwtRememberExpiresIn = process.env.JWT_REMEMBER_EXPIRES_IN || "30d";
 const nodeEnv = process.env.NODE_ENV || "development";
 const uploadsDir = path.join(__dirname, "uploads");
 const isProd = nodeEnv === "production";
@@ -1165,7 +1166,7 @@ async function getWorkById(workId) {
 
 app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
-    const { username, password } = req.body || {};
+    const { username, password, remember } = req.body || {};
     if (!username || !password) {
       return res.status(400).json({ error: "Username e password são obrigatórios." });
     }
@@ -1195,7 +1196,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
     const token = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       jwtSecret,
-      { expiresIn: jwtExpiresIn }
+      { expiresIn: remember === true || remember === "true" ? jwtRememberExpiresIn : jwtExpiresIn }
     );
     return res.json({ token, user: { id: user.id, username: user.username, role: user.role } });
   } catch (_error) {
