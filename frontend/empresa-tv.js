@@ -120,7 +120,33 @@
     return stageAliases[normalized] || normalized;
   }
 
-  const stageKeys = new Set(stageSlides.map((slide) => stageIdentity(slide.dataset.stage)).filter(Boolean));
+  const fixedStageOrder = [
+    "corte",
+    "orlar",
+    "cnc",
+    "montagem_fabrica",
+    "pintura",
+    "montagem_obra"
+  ];
+  const conditionalStageOrder = ["embalar", "inicio_obra", "camiao", "obra"];
+  const calendarViewOrder = ["semanas", "mes", "ano"];
+  const stageSlidesByKey = new Map();
+  const calendarSlidesByView = new Map();
+
+  stageSlides.forEach((slide) => {
+    const stageKey = stageIdentity(slide.dataset.stage);
+    if (stageKey && !stageSlidesByKey.has(stageKey)) stageSlidesByKey.set(stageKey, slide);
+  });
+  calendarSlides.forEach((slide) => {
+    const view = slide.dataset.calendarView;
+    if (view && !calendarSlidesByView.has(view)) calendarSlidesByView.set(view, slide);
+  });
+
+  const stageKeys = new Set(stageSlidesByKey.keys());
+  const stageSlidesForRendering = Array.from(stageSlidesByKey.values());
+  const calendarSlidesForRendering = calendarViewOrder
+    .map((view) => calendarSlidesByView.get(view))
+    .filter(Boolean);
 
   function eventStage(event) {
     const candidates = [
@@ -219,7 +245,7 @@
       card.innerHTML = `<h2>${day.label}</h2><p>${items.length ? Calendario.esc(names).replace(/\n/g, "<br>") : "Sem serviço"}</p>`;
       columns[index < 3 ? 0 : 1].appendChild(card);
     });
-    const stageKey = canonicalStage(stage);
+    const stageKey = stageIdentity(stage);
     const plannedVisible = !slide.classList.contains("tv-conditional-slide") || grouped.size > 0;
     slide.classList.toggle("tv-planned-visible", plannedVisible);
     if (slide.classList.contains("tv-conditional-slide") && plannedVisible) {
@@ -237,9 +263,9 @@
   function renderAll() {
     const currentSlide = document.querySelector(".tv-slide.active");
     visibleConditionalStages = new Set();
-    stageSlides.forEach(renderStage);
-    calendarSlides.forEach(renderCalendar);
-    const available = activeSlides();
+    stageSlidesForRendering.forEach(renderStage);
+    calendarSlidesForRendering.forEach(renderCalendar);
+    const available = getActiveSlides();
     const currentSlideIndex = currentSlide ? available.indexOf(currentSlide) : -1;
     slideIndex = currentSlideIndex >= 0
       ? currentSlideIndex
@@ -248,42 +274,23 @@
     scheduleFit();
   }
 
-  function activeSlides() {
-    const seen = new Set();
-    const available = slides.filter((slide) => {
-      if (slide.classList.contains("tv-conditional-slide")
-        && !visibleConditionalStages.has(stageIdentity(slide.dataset.stage))) return false;
-      const identity = slide.dataset.stage
-        ? `stage:${stageIdentity(slide.dataset.stage)}`
-        : slide.dataset.calendarView
-          ? `calendar:${slide.dataset.calendarView}`
-          : slide;
-      if (seen.has(identity)) return false;
-      seen.add(identity);
-      return true;
-    });
+  function getActiveSlides() {
+    const fixedSlides = fixedStageOrder
+      .map((stageKey) => stageSlidesByKey.get(stageKey))
+      .filter(Boolean);
+    const conditionalSlides = conditionalStageOrder
+      .filter((stageKey) => visibleConditionalStages.has(stageKey))
+      .map((stageKey) => stageSlidesByKey.get(stageKey))
+      .filter(Boolean);
+    const calendarSlides = calendarViewOrder
+      .map((view) => calendarSlidesByView.get(view))
+      .filter(Boolean);
 
-    const stageSlidesAlwaysVisible = available.filter((slide) => (
-      slide.classList.contains("tv-stage-slide") && !slide.classList.contains("tv-conditional-slide")
-    ));
-    const calendarSlidesAlwaysVisible = available.filter((slide) => slide.classList.contains("tv-calendar-slide"));
-    const stageSlidesConditional = available.filter((slide) => (
-      slide.classList.contains("tv-stage-slide") && slide.classList.contains("tv-conditional-slide")
-    ));
-    const otherSlides = available.filter((slide) => (
-      !slide.classList.contains("tv-stage-slide") && !slide.classList.contains("tv-calendar-slide")
-    ));
-
-    return [
-      ...stageSlidesAlwaysVisible,
-      ...stageSlidesConditional,
-      ...calendarSlidesAlwaysVisible,
-      ...otherSlides
-    ];
+    return [...fixedSlides, ...conditionalSlides, ...calendarSlides];
   }
 
   function showSlide(index) {
-    const available = activeSlides();
+    const available = getActiveSlides();
     if (!available.length) return;
     slideIndex = (index + available.length) % available.length;
     slides.forEach((slide) => slide.classList.remove("active"));
@@ -347,7 +354,7 @@
         calendarDates.mes = new Date(calendarDates.ano.getFullYear(), Number(month.dataset.month), 1, 12);
         const monthSlide = document.querySelector('[data-calendar-view="mes"]');
         renderCalendar(monthSlide);
-        showSlide(activeSlides().indexOf(monthSlide));
+        showSlide(getActiveSlides().indexOf(monthSlide));
       }
     });
   });
