@@ -191,7 +191,7 @@
 
   function activeSlides() {
     const seen = new Set();
-    return slides.filter((slide) => {
+    const available = slides.filter((slide) => {
       if (slide.classList.contains("tv-conditional-slide")
         && !visibleConditionalStages.has(canonicalStage(slide.dataset.stage))) return false;
       const identity = slide.dataset.stage
@@ -203,6 +203,24 @@
       seen.add(identity);
       return true;
     });
+
+    const stageSlidesAlwaysVisible = available.filter((slide) => (
+      slide.classList.contains("tv-stage-slide") && !slide.classList.contains("tv-conditional-slide")
+    ));
+    const calendarSlidesAlwaysVisible = available.filter((slide) => slide.classList.contains("tv-calendar-slide"));
+    const stageSlidesConditional = available.filter((slide) => (
+      slide.classList.contains("tv-stage-slide") && slide.classList.contains("tv-conditional-slide")
+    ));
+    const otherSlides = available.filter((slide) => (
+      !slide.classList.contains("tv-stage-slide") && !slide.classList.contains("tv-calendar-slide")
+    ));
+
+    return [
+      ...stageSlidesAlwaysVisible,
+      ...stageSlidesConditional,
+      ...calendarSlidesAlwaysVisible,
+      ...otherSlides
+    ];
   }
 
   function showSlide(index) {
