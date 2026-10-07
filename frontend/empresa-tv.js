@@ -131,31 +131,20 @@
   const conditionalStageOrder = ["embalar", "inicio_obra", "camiao", "obra"];
   const calendarViewOrder = ["semanas", "mes", "ano"];
   const stageSlidesByKey = new Map();
-  const calendarSlidesByView = new Map();
 
   stageSlides.forEach((slide) => {
     const stageKey = stageIdentity(slide.dataset.stage);
     if (stageKey && !stageSlidesByKey.has(stageKey)) stageSlidesByKey.set(stageKey, slide);
   });
-  calendarSlides.forEach((slide) => {
-    const view = slide.dataset.calendarView;
-    if (view && !calendarSlidesByView.has(view)) calendarSlidesByView.set(view, slide);
-  });
-
   const stageKeys = new Set(stageSlidesByKey.keys());
   const stageSlidesForRendering = Array.from(stageSlidesByKey.values());
-  const calendarSlidesForRendering = calendarViewOrder
-    .map((view) => calendarSlidesByView.get(view))
-    .filter(Boolean);
 
   function getCurrentCalendarSlides() {
     ensureCalendarSlides();
-    const byView = new Map();
-    document.querySelectorAll(".tv-calendar-slide").forEach((slide) => {
-      const view = slide.dataset.calendarView;
-      if (view && !byView.has(view)) byView.set(view, slide);
-    });
-    return calendarViewOrder.map((view) => byView.get(view)).filter(Boolean);
+    const found = Array.from(document.querySelectorAll(".tv-calendar-slide"));
+    return calendarViewOrder
+      .map((view) => found.find((slide) => slide.dataset.calendarView === view))
+      .filter(Boolean);
   }
 
   function eventStage(event) {
