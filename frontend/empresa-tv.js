@@ -89,34 +89,40 @@
       .replace(/^_|_$/g, "");
   }
 
-  const stageKeys = new Set(stageSlides.map((slide) => canonicalStage(slide.dataset.stage)).filter(Boolean));
+  const stageAliases = {
+    embalagem: "embalar",
+    embalamento: "embalar",
+    carregar: "camiao",
+    carregar_camiao: "camiao",
+    carregar_o_camiao: "camiao",
+    carregar_caminhao: "camiao",
+    carregar_o_caminhao: "camiao",
+    camiao: "camiao",
+    fim_de_obra: "obra",
+    fim_da_obra: "obra",
+    fim_de_montagem: "obra",
+    fim_de_montagem_em_obra: "obra",
+    fim_de_montagem_na_obra: "obra",
+    inicio: "inicio_obra",
+    inicio_de_obra: "inicio_obra",
+    inicio_da_obra: "inicio_obra",
+    inicio_de_montagem: "inicio_obra",
+    inicio_de_montagem_em_obra: "inicio_obra",
+    inicio_de_montagem_na_obra: "inicio_obra",
+    montagem_de_fabrica: "montagem_fabrica",
+    montagem_na_fabrica: "montagem_fabrica",
+    montagem_de_obra: "montagem_obra",
+    montagem_na_obra: "montagem_obra"
+  };
+
+  function stageIdentity(value) {
+    const normalized = canonicalStage(value);
+    return stageAliases[normalized] || normalized;
+  }
+
+  const stageKeys = new Set(stageSlides.map((slide) => stageIdentity(slide.dataset.stage)).filter(Boolean));
 
   function eventStage(event) {
-    const aliases = {
-      embalagem: "embalar",
-      embalamento: "embalar",
-      carregar: "camiao",
-      carregar_camiao: "camiao",
-      carregar_o_camiao: "camiao",
-      carregar_caminhao: "camiao",
-      carregar_o_caminhao: "camiao",
-      camiao: "camiao",
-      fim_de_obra: "obra",
-      fim_da_obra: "obra",
-      fim_de_montagem: "obra",
-      fim_de_montagem_em_obra: "obra",
-      fim_de_montagem_na_obra: "obra",
-      inicio: "inicio_obra",
-      inicio_de_obra: "inicio_obra",
-      inicio_da_obra: "inicio_obra",
-      inicio_de_montagem: "inicio_obra",
-      inicio_de_montagem_em_obra: "inicio_obra",
-      inicio_de_montagem_na_obra: "inicio_obra",
-      montagem_de_fabrica: "montagem_fabrica",
-      montagem_na_fabrica: "montagem_fabrica",
-      montagem_de_obra: "montagem_obra",
-      montagem_na_obra: "montagem_obra"
-    };
     const candidates = [
       event.tipo,
       event.etapa,
@@ -127,7 +133,7 @@
     ]
       .map(canonicalStage)
       .filter(Boolean)
-      .map((value) => aliases[value] || value);
+      .map(stageIdentity);
     return candidates.find((value) => stageKeys.has(value)) || candidates[0] || "";
   }
 
@@ -142,7 +148,7 @@
   function currentWeekEvents(stage) {
     const from = startOfWeek();
     const to = new Date(from.getFullYear(), from.getMonth(), from.getDate() + 6, 12);
-    const stageKey = canonicalStage(stage);
+    const stageKey = stageIdentity(stage);
     return events.filter((event) => eventStage(event) === stageKey && eventOverlaps(event, from, to));
   }
 
@@ -246,9 +252,9 @@
     const seen = new Set();
     const available = slides.filter((slide) => {
       if (slide.classList.contains("tv-conditional-slide")
-        && !visibleConditionalStages.has(canonicalStage(slide.dataset.stage))) return false;
+        && !visibleConditionalStages.has(stageIdentity(slide.dataset.stage))) return false;
       const identity = slide.dataset.stage
-        ? `stage:${slide.dataset.stage}`
+        ? `stage:${stageIdentity(slide.dataset.stage)}`
         : slide.dataset.calendarView
           ? `calendar:${slide.dataset.calendarView}`
           : slide;
