@@ -71,7 +71,6 @@
   const calendarDates = { semanas: new Date(), mes: new Date(), ano: new Date() };
   let events = [];
   let slideIndex = 0;
-  let visibleConditionalStages = new Set();
   let rotationPaused = mobileLayout.matches;
   let wakeLock = null;
 
@@ -120,15 +119,18 @@
     return stageAliases[normalized] || normalized;
   }
 
-  const fixedStageOrder = [
+  const allStageOrder = [
     "corte",
     "orlar",
     "cnc",
     "montagem_fabrica",
     "pintura",
-    "montagem_obra"
+    "montagem_obra",
+    "embalar",
+    "inicio_obra",
+    "camiao",
+    "obra"
   ];
-  const conditionalStageOrder = ["embalar", "inicio_obra", "camiao", "obra"];
   const calendarViewOrder = ["semanas", "mes", "ano"];
   const stageSlidesByKey = new Map();
 
@@ -244,12 +246,6 @@
       card.innerHTML = `<h2>${day.label}</h2><p>${items.length ? Calendario.esc(names).replace(/\n/g, "<br>") : "Sem serviço"}</p>`;
       columns[index < 3 ? 0 : 1].appendChild(card);
     });
-    const stageKey = stageIdentity(stage);
-    const plannedVisible = !slide.classList.contains("tv-conditional-slide") || grouped.size > 0;
-    slide.classList.toggle("tv-planned-visible", plannedVisible);
-    if (slide.classList.contains("tv-conditional-slide") && plannedVisible) {
-      visibleConditionalStages.add(stageKey);
-    }
   }
 
   function renderCalendar(slide) {
@@ -261,7 +257,6 @@
 
   function renderAll() {
     const currentSlide = document.querySelector(".tv-slide.active");
-    visibleConditionalStages = new Set();
     stageSlidesForRendering.forEach(renderStage);
     getCurrentCalendarSlides().forEach(renderCalendar);
     const available = getActiveSlides();
@@ -274,16 +269,12 @@
   }
 
   function getActiveSlides() {
-    const fixedSlides = fixedStageOrder
-      .map((stageKey) => stageSlidesByKey.get(stageKey))
-      .filter(Boolean);
-    const conditionalSlides = conditionalStageOrder
-      .filter((stageKey) => visibleConditionalStages.has(stageKey))
+    const stageSlides = allStageOrder
       .map((stageKey) => stageSlidesByKey.get(stageKey))
       .filter(Boolean);
     const calendarSlides = getCurrentCalendarSlides();
 
-    return [...fixedSlides, ...conditionalSlides, ...calendarSlides];
+    return [...stageSlides, ...calendarSlides];
   }
 
   function showSlide(index) {
